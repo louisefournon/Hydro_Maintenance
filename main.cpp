@@ -16,7 +16,7 @@ int main(){
     
     // Read the netCDF File with all the data
 
-    netCDF::NcFile f;
+    netCDF::NcFile file_path;
     try {
         f.open( filename, netCDF::NcFile::read );
     } catch( netCDF::exceptions::NcException & e ) {
@@ -47,41 +47,33 @@ int main(){
         exit( 1 );
     }
 
-    auto ucb = dynamic_cast<UCBlock *>(Block::new_Block( "UCBlock" ));
-    uc_block->deserialize( bg );
-
     
     // 1) Construct the UCBlock.
 
-    auto uc_block = Block::deserialize( file_path );
+    auto uc_block = dynamic_cast<UCBlock *>(Block::new_Block( "UCBlock" ));
+    uc_block->deserialize( bg );
     
-    auto linking_const = uc_block->get_static_constraints();
-    // We relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const (I couldn't find how to access them through their name) 
-    for(int i = 0; i<3; i++){
-        linking_const[i].relax(true);
-    }
+    // 1.1) Relax the desired constraints in uc_block.
+        // Constraint has a method called relax(). You should invoke this method for each Constraint you want to relax (and pass true as argument).
+    
+    
+    // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
+
+    auto linking_const = uc_block->get_static_constraints();    
+    linking_const(v_node_injection_constraints).relax(true);
+    linking_const(v_PrimaryDemand_Const).relax(true);
+    linking_const(v_SecondaryDemand_Const).relax(true); // I'm not sure this is the right way to access the constraints
+    
+    // Then we look for the constraint x = \xi in each nested block to relax them
     
     for( auto i: uc_block->get_nested_Blocks() ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>(i);
-        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
-
-        auto constraint = hydro_unit_block->get_static_constraints();
-
-                auto active_power = hydro_unit_block->get_active_power( g );
-                std::cout << "active_power     = [";
-                for( UnitBlock::Index t = 0; t < unit_block->get_time_horizon(); ++t ) {
-                    std::cout << std::setw( 20 ) << active_power[t].get_value();
-                    }
-                std::cout << " ]" << std::endl;
-                }
-
-        }
+        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
+        auto constraint = hydro_unit_block->get_static_constraints("XiEqualZ");
+        constraint.relax(true);
 
     }
-
-        // 1.1) Relax the desired constraints in uc_block.
-        // Constraint has a method called relax(). You should invoke this method for each Constraint you want to relax (and pass true as argument).
 
     // 2) Construct the Lagrangian Block (the Block whose objective will be a LagBFunction).
 
