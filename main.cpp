@@ -14,9 +14,52 @@ using namespace SMSpp_di_unipi_it;
 
 int main(){
     
+    // Read the netCDF File with all the data
+
+    netCDF::NcFile f;
+    try {
+        f.open( filename, netCDF::NcFile::read );
+    } catch( netCDF::exceptions::NcException & e ) {
+        std::cerr << "Cannot open nc4 file " << filename << std::endl;
+        exit( 1 );
+    }
+
+    netCDF::NcGroupAtt gtype = f.getAtt( "SMS++_file_type" );
+    if( gtype.isNull() ) {
+        std::cerr << filename << " is not an SMS++ nc4 file" << std::endl;
+        exit( 1 );
+    }
+
+    int type;
+    gtype.getValues( &type );
+
+    if( type != eBlockFile ) {
+        std::cerr << filename << " is not an SMS++ nc4 Block file" << std::endl;
+        exit( 1 );
+    }
+    
+    // Get the data of the general UC block (bg)
+
+    netCDF::NcGroup bg = f.getGroup( "Block_0" );
+
+    if( bg.isNull() ) {
+        std::cerr << "Block_0 empty or undefined in " << filename << std::endl;
+        exit( 1 );
+    }
+
+    auto ucb = dynamic_cast<UCBlock *>(Block::new_Block( "UCBlock" ));
+    uc_block->deserialize( bg );
+
+    
     // 1) Construct the UCBlock.
 
     auto uc_block = Block::deserialize( file_path );
+    
+    auto linking_const = uc_block->get_static_constraints();
+    // We relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const (I couldn't find how to access them through their name) 
+    for(int i = 0; i<3; i++){
+        linking_const[i].relax(true);
+    }
     
     for( auto i: uc_block->get_nested_Blocks() ) {
         
