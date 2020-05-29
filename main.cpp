@@ -66,22 +66,53 @@ int main(){
     
     // Then we look for the constraint x = \xi in each nested block to relax them
     
+    // We also want the indexes and number of hydroUnitBlocks for the rest
+    vector<int> idx_hydro_blocks; 
+    int nb_hydro_blocks;
+    
     for( auto i: uc_block->get_nested_Blocks() ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>(i);
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
-        auto constraint = hydro_unit_block->get_static_constraints("XiEqualZ");
-        constraint.relax(true);
-
+        if( hydro_unit_block != nullptr ){
+            idx_hydro_blocks.push_back(i);
+            auto constraint = hydro_unit_block->get_static_constraints("XiEqualZ");
+            constraint.relax(true);
+        }
     }
-
+    
+    nb_hydro_blocks = idx_hydro_blocks.size();
+    
     // 2) Construct the Lagrangian Block (the Block whose objective will be a LagBFunction).
 
     auto lagrangian_block = new AbstractBlock();
 
         //2.1) Create the variables to the lagrangian_block:
-
-    std::vector< ColVariable > lambda( size_of_lambda );
+    
+    // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators)
+    
+    // Create the dual variables for the demand constraints
+    std::vector< ColVariable > lambda_1(1);
+    std::vector< ColVariable > lambda_2(1);
+    std::vector< ColVariable > lambda_3(1);
+    
+    // Create the lambdas of the XiEqualZ constraints 
+    
+    std::vector< std::vector< ColVariable > > lambda;
+    for( auto i: uc_block->get_nested_Blocks() ) {
+        
+        auto unit_block = dynamic_cast<UnitBlock *>(i);
+        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
+        if( hydro_unit_block != nullptr ){
+            lambda.push_back(std::vector< ColVariable > subLambda(hydro_unit_block.f_number_arcs)); // Not sure about that attribute access
+            auto constraint = hydro_unit_block->get_static_constraints("XiEqualZ");
+            constraint.relax(true);
+        }
+    }
+    
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // I haven't done the rest yet
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
         //2.2) Set the sign of the variables if necessary:
 
