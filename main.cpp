@@ -78,7 +78,7 @@ int main(){
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
-            auto constraint = hydro_unit_block->get_static_constraints("XiEqualZ");
+            auto constraint = hydro_unit_block->get_static_constraints[1];  // "XiEqualZ" is the second constraint
             constraint.relax(true);
         }
     }
@@ -94,30 +94,28 @@ int main(){
     // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators)
     
     // Create the dual variables for the demand constraints
+    std::vector< ColVariable > lambda_0(1);
     std::vector< ColVariable > lambda_1(1);
     std::vector< ColVariable > lambda_2(1);
-    std::vector< ColVariable > lambda_3(1);
     
     // Create the lambdas of the XiEqualZ constraints 
     
     std::vector< std::vector< ColVariable > > lambda;
-    for( auto i: uc_block->get_nested_Blocks() ) {
+    for( Index i : idx_hydro_blocks ) {
         
-        auto unit_block = dynamic_cast<UnitBlock *>(i);
+        auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
             lambda.push_back(std::vector< ColVariable > subLambda(hydro_unit_block.f_number_arcs)); // Not sure about that attribute access
-            auto constraint = hydro_unit_block->get_static_constraints[1];  // "XiEqualZ" is the second constraint
-            constraint.relax(true);
         }
     }
     
     
         //2.2) Set the sign of the variables if necessary:
     
+    lambda_0.is_positive( true );
     lambda_1.is_positive( true );
     lambda_2.is_positive( true );
-    lambda_3.is_positive( true );
 
     for( auto & lambda_i : lambda ) {
         lambda_i.is_positive( true );
@@ -126,9 +124,10 @@ int main(){
         //2.3) Add the variables to the Lagrangian Block:
 
     lagrangian_block->add_static_variable( lambda );
+    lagrangian_block->add_static_variable( lambda_0 );
     lagrangian_block->add_static_variable( lambda_1 );
     lagrangian_block->add_static_variable( lambda_2 );
-    lagrangian_block->add_static_variable( lambda_3 );
+
 
         //2.4) Construct the LagBFunction:
 
@@ -136,14 +135,24 @@ int main(){
     lagrangian_function.set_inner_block( & uc_block );
     
     
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // I haven't done the rest yet
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
         //2.5) Associate each lambda_i with a relaxed function (a Function belonging to a relaxed RowConstraint; FRowConstraint has the method get_function() to retrieve a pointer to the Function associated with that Constraint):
-
-    lagrangian_function.set_dual_pairs( ... );
+    
+    lagrangian_function.set_dual_pairs( std::pair l0( lambda_0, linking_const[0].get_function() ) );
+    lagrangian_function.set_dual_pairs( std::pair l1( lambda_1, linking_const[1].get_finction() ) );
+    lagrangian_function.set_dual_pairs( std::pair l2( lambda_2, linking_const[2].get_function() ) );
+    
+    for( Index i : idx_hydro_blocks ) {
+        
+        auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
+        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
+        if( hydro_unit_block != nullptr ){
+            auto constraint = hydro_unit_block->get_static_constraints[1];
+            lagrangian_function.set_dual_pairs( std::pair l( lambda[i], constraint.get_function() ) );
+        }
+    }
+    
+    ////////////////////////////////////////////////////////////////////////////////
 
         //2.6) Add the Objective to the Lagrangian Block.
 
