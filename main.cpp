@@ -169,15 +169,35 @@ int main(){
     std::vector< ColVariable * > z( n );
     for( auto & z_i : benders_block.get_variables() )
         z.push_back( const_cast<ColVariable *>( & z_i ) );
-
-    
-    //////////////////////////////////////////////////////////////////////////////////////////////////
-    //                                  WIP
-    //////////////////////////////////////////////////////////////////////////////////////////////////
     
         //4.2) Create the mapping formed by the n x n identity matrix A, the n-dimensional zero vector b, the n-dimensional ConstraintSide vector with all components equal to BendersBFunction::ConstraintSide::eBoth, and the vector of pointers to the RowConstraints representing z_i = \xi_i that you defined in the HydroUnitBlock:
+    
+    // Create identity matrix
+    A = std::vector< std::vector<int> >(n, std::vector<int>(n,0));
+    for(unsigned int t = 0; t < n; t++)
+        A[t][t] = 1;
 
-    BendersBFunction benders_function( lagrangian_block , z , A , b , constraints , sides );
+    // Create b vector
+    b = std::vector<int>(n,0);
+    
+    // Create sides vector
+    sides = std::vector<BendersBFunction::ConstraintSide>(n, BendersBFunction::ConstraintSide::eBoth);
+    
+    // Create constraints pointers vector
+    constraints_pointer = std::vector< RowConstraint * >
+    
+    for( Index i : idx_hydro_blocks ) {
+        
+        auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
+        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
+        if( hydro_unit_block != nullptr ){
+            auto constraint = hydro_unit_block->get_static_constraints[1];
+            constraints_pointer.push_back( &constraint);
+        }
+    }
+    
+
+    BendersBFunction benders_function( lagrangian_block , z , A , b , constraints_pointer , sides );
 
     //5) Add the BendersBFunction as the Objective of the BendersBlock
 
