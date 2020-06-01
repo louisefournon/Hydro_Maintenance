@@ -7,8 +7,6 @@
 #include <FRowConstraint.h>
 #include <FRealObjective.h>
 
-//// Test GIT
-
 using namespace SMSpp_di_unipi_it;
 
 
@@ -91,7 +89,7 @@ int main(){
 
         //2.1) Create the variables to the lagrangian_block:
     
-    // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators)
+    // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators = f_number_arcs)
     
     // Create the dual variables for the demand constraints
     std::vector< ColVariable > lambda_0(1);
@@ -100,13 +98,15 @@ int main(){
     
     // Create the lambdas of the XiEqualZ constraints 
     
+    int n = hydro_unit_block.f_number_arcs; // Not sure about that attribute access
+    
     std::vector< std::vector< ColVariable > > lambda;
     for( Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
-            lambda.push_back(std::vector< ColVariable > subLambda(hydro_unit_block.f_number_arcs)); // Not sure about that attribute access
+            lambda.push_back(std::vector< ColVariable > subLambda(n)); 
         }
     }
     
@@ -151,8 +151,6 @@ int main(){
             lagrangian_function.set_dual_pairs( std::pair l( lambda[i], constraint.get_function() ) );
         }
     }
-    
-    ////////////////////////////////////////////////////////////////////////////////
 
         //2.6) Add the Objective to the Lagrangian Block.
 
@@ -172,6 +170,11 @@ int main(){
     for( auto & z_i : benders_block.get_variables() )
         z.push_back( const_cast<ColVariable *>( & z_i ) );
 
+    
+    //////////////////////////////////////////////////////////////////////////////////////////////////
+    //                                  WIP
+    //////////////////////////////////////////////////////////////////////////////////////////////////
+    
         //4.2) Create the mapping formed by the n x n identity matrix A, the n-dimensional zero vector b, the n-dimensional ConstraintSide vector with all components equal to BendersBFunction::ConstraintSide::eBoth, and the vector of pointers to the RowConstraints representing z_i = \xi_i that you defined in the HydroUnitBlock:
 
     BendersBFunction benders_function( lagrangian_block , z , A , b , constraints , sides );
