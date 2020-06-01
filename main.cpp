@@ -38,7 +38,7 @@ int main(){
         exit( 1 );
     }
     
-    // Get the data of the general UC block (bg)
+    // Get the data of the general UC block (bg) contained in Block_0
 
     netCDF::NcGroup bg = f.getGroup( "Block_0" );
 
@@ -60,9 +60,9 @@ int main(){
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
 
     auto linking_const = uc_block->get_static_constraints();    
-    linking_const(v_node_injection_constraints).relax(true);
-    linking_const(v_PrimaryDemand_Const).relax(true);
-    linking_const(v_SecondaryDemand_Const).relax(true); // I'm not sure this is the right way to access the constraints
+    linking_const[0].relax(true);
+    linking_const[1].relax(true);
+    linking_const[2].relax(true); // I'm not sure this is the right way to access the constraints
     
     // Then we look for the constraint x = \xi in each nested block to relax them
     
@@ -70,9 +70,11 @@ int main(){
     vector<int> idx_hydro_blocks; 
     int nb_hydro_blocks;
     
-    for( auto i: uc_block->get_nested_Blocks() ) {
+    auto sb =  uc_block->get_nested_Blocks();
+    
+    for( Index i = 0 ; i < sb.size() ; ++i ) { // Each i is a subblock (thermal or hydro)
         
-        auto unit_block = dynamic_cast<UnitBlock *>(i);
+        auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
@@ -105,16 +107,17 @@ int main(){
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
             lambda.push_back(std::vector< ColVariable > subLambda(hydro_unit_block.f_number_arcs)); // Not sure about that attribute access
-            auto constraint = hydro_unit_block->get_static_constraints("XiEqualZ");
+            auto constraint = hydro_unit_block->get_static_constraints[1];  // "XiEqualZ" is the second constraint
             constraint.relax(true);
         }
     }
     
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // I haven't done the rest yet
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+    
         //2.2) Set the sign of the variables if necessary:
+    
+    lambda_1.is_positive( true );
+    lambda_2.is_positive( true );
+    lambda_3.is_positive( true );
 
     for( auto & lambda_i : lambda ) {
         lambda_i.is_positive( true );
@@ -123,11 +126,20 @@ int main(){
         //2.3) Add the variables to the Lagrangian Block:
 
     lagrangian_block->add_static_variable( lambda );
+    lagrangian_block->add_static_variable( lambda_1 );
+    lagrangian_block->add_static_variable( lambda_2 );
+    lagrangian_block->add_static_variable( lambda_3 );
 
         //2.4) Construct the LagBFunction:
 
     LagBFunction lagrangian_function;
     lagrangian_function.set_inner_block( & uc_block );
+    
+    
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // I haven't done the rest yet
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
         //2.5) Associate each lambda_i with a relaxed function (a Function belonging to a relaxed RowConstraint; FRowConstraint has the method get_function() to retrieve a pointer to the Function associated with that Constraint):
 
