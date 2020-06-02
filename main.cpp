@@ -98,7 +98,7 @@ int main(){
     
     // Create the lambdas of the XiEqualZ constraints 
     
-    int n = hydro_unit_block.f_number_arcs; // Not sure about that attribute access
+    int m = 0; // Total number of generators (assets)
     
     std::vector< std::vector< ColVariable > > lambda;
     for( Index i : idx_hydro_blocks ) {
@@ -106,7 +106,9 @@ int main(){
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
-            lambda.push_back(std::vector< ColVariable > subLambda(n)); 
+            Index n_i = hydro_unit_block->get_number_generators();
+            lambda.push_back(std::vector< ColVariable > subLambda(n_i)); 
+            m += n_i;
         }
     }
     
@@ -158,30 +160,31 @@ int main(){
     objective->set_sense( Objective::eMax );
     lagrangian_block->set_objective( objective );
 
-    //3) If you want, construct a BendersBlock that will have the BendersBFunction as the objective function. Let n be the number of z variables.
+    //3) If you want, construct a BendersBlock that will have the BendersBFunction as the objective function. Let m be the number of z variables i.e. the total number of generators in our system 
+    
 
-    BendersBlock benders_block( nullptr , n );
+    BendersBlock benders_block( nullptr , m);
 
     //4) Construct the BendersBFunction.
 
-        //4.1) Create a vector of pointers to z:
+        //4.1) Create a vector of pointers to z (z doesn't exist yet in our UCBlock, for now we have \xi = 0. BendersBFunction will later update the constraints of UCBlock using the mapping to include the dependance in z in the constraints \xi = z):
 
-    std::vector< ColVariable * > z( n );
+    std::vector< ColVariable * > z( m );
     for( auto & z_i : benders_block.get_variables() )
         z.push_back( const_cast<ColVariable *>( & z_i ) );
     
-        //4.2) Create the mapping formed by the n x n identity matrix A, the n-dimensional zero vector b, the n-dimensional ConstraintSide vector with all components equal to BendersBFunction::ConstraintSide::eBoth, and the vector of pointers to the RowConstraints representing z_i = \xi_i that you defined in the HydroUnitBlock:
+        //4.2) Create the mapping formed by the m x m identity matrix A, the m-dimensional zero vector b, the m-dimensional ConstraintSide vector with all components equal to BendersBFunction::ConstraintSide::eBoth, and the vector of pointers to the RowConstraints representing z_i = \xi_i that you defined in the HydroUnitBlock:
     
     // Create identity matrix
-    A = std::vector< std::vector<int> >(n, std::vector<int>(n,0));
-    for(unsigned int t = 0; t < n; t++)
+    A = std::vector< std::vector<int> >(m, std::vector<int>(m,0));
+    for(unsigned int t = 0; t < m; t++)
         A[t][t] = 1;
 
     // Create b vector
-    b = std::vector<int>(n,0);
+    b = std::vector<int>(m,0);
     
     // Create sides vector
-    sides = std::vector<BendersBFunction::ConstraintSide>(n, BendersBFunction::ConstraintSide::eBoth);
+    sides = std::vector<BendersBFunction::ConstraintSide>(m, BendersBFunction::ConstraintSide::eBoth);
     
     // Create constraints pointers vector
     constraints_pointer = std::vector< RowConstraint * >
