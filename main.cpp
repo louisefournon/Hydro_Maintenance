@@ -9,12 +9,14 @@
 
 using namespace SMSpp_di_unipi_it;
 
+std::string filename{};
 
 int main(){
     
     // Read the netCDF File with all the data
+    
 
-    netCDF::NcFile file_path;
+    netCDF::NcFile f;
     try {
         f.open( filename, netCDF::NcFile::read );
     } catch( netCDF::exceptions::NcException & e ) {
