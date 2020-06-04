@@ -6,6 +6,11 @@
 #include <ColVariable.h>
 #include <FRowConstraint.h>
 #include <FRealObjective.h>
+#include <UCBlock.h>
+#include <IntermittentUnitBlock.h>
+#include <HydroUnitMaintenance.h>
+#include <HydroUnitBlock.h>
+
 
 using namespace SMSpp_di_unipi_it;
 
@@ -14,11 +19,10 @@ std::string filename{};
 int main(){
     
     // Read the netCDF File with all the data
-    
 
     netCDF::NcFile f;
     try {
-        f.open( filename, netCDF::NcFile::read );
+        f.open( "20_10_h_w.nc4", netCDF::NcFile::read );
     } catch( netCDF::exceptions::NcException & e ) {
         std::cerr << "Cannot open nc4 file " << filename << std::endl;
         exit( 1 );
@@ -59,27 +63,28 @@ int main(){
     
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
 
-    auto linking_const = uc_block->get_static_constraints();    
+    auto linking_const = uc_block->get_static_constraints();        
+    /*
     linking_const[0].relax(true);
     linking_const[1].relax(true);
-    linking_const[2].relax(true); // I'm not sure this is the right way to access the constraints
+    linking_const[2].relax(true); */ // I'm not sure this is the right way to access the constraints
     
     // Then we look for the constraint x = \xi in each nested block to relax them
     
     // We also want the indexes and number of hydroUnitBlocks for the rest
-    vector<int> idx_hydro_blocks; 
+    std::vector<int> idx_hydro_blocks; 
     int nb_hydro_blocks;
     
     auto sb =  uc_block->get_nested_Blocks();
     
-    for( Index i = 0 ; i < sb.size() ; ++i ) { // Each i is a subblock (thermal or hydro)
+    for( UnitBlock::Index i = 0 ; i < sb.size() ; ++i ) { // Each i is a subblock (thermal or hydro)
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
-            auto constraint = hydro_unit_block->get_static_constraints[1];  // "XiEqualZ" is the second constraint
-            constraint.relax(true);
+            //auto constraint = hydro_unit_block->get_static_constraints[1];  // "XiEqualZ" is the second constraint
+            //constraint.relax(true);
         }
     }
     
@@ -103,13 +108,14 @@ int main(){
     int m = 0; // Total number of generators (assets)
     
     std::vector< std::vector< ColVariable > > lambda;
-    for( Index i : idx_hydro_blocks ) {
+    for( UnitBlock::Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
-            Index n_i = hydro_unit_block->get_number_generators();
-            lambda.push_back(std::vector< ColVariable > subLambda(n_i)); 
+            UnitBlock::Index n_i = hydro_unit_block->get_number_generators();
+            std::vector< ColVariable > subLambda(n_i);
+            lambda.push_back(subLambda); 
             m += n_i;
         }
     }
@@ -117,12 +123,25 @@ int main(){
     
         //2.2) Set the sign of the variables if necessary:
     
-    lambda_0.is_positive( true );
+    for( int i = 0; i < lambda_0.size(); i++){
+        lambda_0[i].is_positive( true );
+    }
+    for( int i = 0; i < lambda_1.size(); i++){
+        lambda_1[i].is_positive( true );
+    }
+    for( int i = 0; i < lambda_2.size(); i++){
+        lambda_2[i].is_positive( true );
+    }
+    
+    /*lambda_0.is_positive( true );
     lambda_1.is_positive( true );
     lambda_2.is_positive( true );
+    */
 
     for( auto & lambda_i : lambda ) {
-        lambda_i.is_positive( true );
+        for(int k = 0; k < lambda_i.size(); k++){
+            lambda_i[k].is_positive( true );
+        }
     }
 
         //2.3) Add the variables to the Lagrangian Block:
@@ -136,17 +155,22 @@ int main(){
         //2.4) Construct the LagBFunction:
 
     LagBFunction lagrangian_function;
-    lagrangian_function.set_inner_block( & uc_block );
+    lagrangian_function.set_inner_block( uc_block );
     
     
 
         //2.5) Associate each lambda_i with a relaxed function (a Function belonging to a relaxed RowConstraint; FRowConstraint has the method get_function() to retrieve a pointer to the Function associated with that Constraint):
     
-    lagrangian_function.set_dual_pairs( std::pair l0( lambda_0, linking_const[0].get_function() ) );
-    lagrangian_function.set_dual_pairs( std::pair l1( lambda_1, linking_const[1].get_finction() ) );
-    lagrangian_function.set_dual_pairs( std::pair l2( lambda_2, linking_const[2].get_function() ) );
+    std::pair l_0( lambda_0, linking_const[0].get_function() );
+    std::pair l_1( lambda_1, linking_const[1].get_function() );
+    std::pair l_2( lambda_2, linking_const[2].get_function() );
+                  
     
-    for( Index i : idx_hydro_blocks ) {
+    lagrangian_function.set_dual_pairs( l_0 );
+    lagrangian_function.set_dual_pairs( l_1 );
+    lagrangian_function.set_dual_pairs( l_2 );
+    
+    for( UnitBlock::Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
@@ -191,7 +215,7 @@ int main(){
     // Create constraints pointers vector
     constraints_pointer = std::vector< RowConstraint * >
     
-    for( Index i : idx_hydro_blocks ) {
+    for( UnitBlock::Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
