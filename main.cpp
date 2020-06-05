@@ -10,6 +10,7 @@
 #include <IntermittentUnitBlock.h>
 #include <HydroUnitMaintenance.h>
 #include <HydroUnitBlock.h>
+#include <Function.h>
 
 
 using namespace SMSpp_di_unipi_it;
@@ -63,15 +64,17 @@ int main(){
     
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
 
-    auto linking_const = uc_block->get_static_constraints();        
-    /*
-    linking_const[0].relax(true);
-    linking_const[1].relax(true);
-    linking_const[2].relax(true); */ // I'm not sure this is the right way to access the constraints
+//    auto linking_const_0 = uc_block->get_static_constraint(0);  
+//    auto linking_const_1 = uc_block->get_static_constraint(1); 
+//    auto linking_const_2 = uc_block->get_static_constraint(2); 
+//    
+//    un_any_static( linking_const_0 , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+//    un_any_static( linking_const_1 , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+//    un_any_static( linking_const_2 , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
     
     // Then we look for the constraint x = \xi in each nested block to relax them
-    
     // We also want the indexes and number of hydroUnitBlocks for the rest
+    
     std::vector<int> idx_hydro_blocks; 
     int nb_hydro_blocks;
     
@@ -83,8 +86,8 @@ int main(){
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
-            //auto constraint = hydro_unit_block->get_static_constraints[1];  // "XiEqualZ" is the second constraint
-            //constraint.relax(true);
+//            auto constraints = hydro_unit_block->get_static_constraint(1);  // "XiEqualZ" is the second constraint
+//            un_any_static( constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
         }
     }
     
@@ -132,11 +135,6 @@ int main(){
     for( int i = 0; i < lambda_2.size(); i++){
         lambda_2[i].is_positive( true );
     }
-    
-    /*lambda_0.is_positive( true );
-    lambda_1.is_positive( true );
-    lambda_2.is_positive( true );
-    */
 
     for( auto & lambda_i : lambda ) {
         for(int k = 0; k < lambda_i.size(); k++){
@@ -161,22 +159,22 @@ int main(){
 
         //2.5) Associate each lambda_i with a relaxed function (a Function belonging to a relaxed RowConstraint; FRowConstraint has the method get_function() to retrieve a pointer to the Function associated with that Constraint):
     
-    std::pair l_0( lambda_0, linking_const[0].get_function() );
-    std::pair l_1( lambda_1, linking_const[1].get_function() );
-    std::pair l_2( lambda_2, linking_const[2].get_function() );
-                  
-    
-    lagrangian_function.set_dual_pairs( l_0 );
-    lagrangian_function.set_dual_pairs( l_1 );
-    lagrangian_function.set_dual_pairs( l_2 );
+//    std::pair l_0( lambda_0, linking_const[0].get_function() );
+//    std::pair l_1( lambda_1, linking_const[1].get_function() );
+//    std::pair l_2( lambda_2, linking_const[2].get_function() );
+//                  
+//    
+//    lagrangian_function.set_dual_pairs( l_0 );
+//    lagrangian_function.set_dual_pairs( l_1 );
+//    lagrangian_function.set_dual_pairs( l_2 );
     
     for( UnitBlock::Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
-            auto constraint = hydro_unit_block->get_static_constraints[1];
-            lagrangian_function.set_dual_pairs( std::pair l( lambda[i], constraint.get_function() ) );
+//            auto constraint = hydro_unit_block->get_static_constraint(1);
+//            lagrangian_function.set_dual_pairs( std::pair l( lambda[i], constraint.get_function() ) );
         }
     }
 
@@ -202,28 +200,34 @@ int main(){
         //4.2) Create the mapping formed by the m x m identity matrix A, the m-dimensional zero vector b, the m-dimensional ConstraintSide vector with all components equal to BendersBFunction::ConstraintSide::eBoth, and the vector of pointers to the RowConstraints representing z_i = \xi_i that you defined in the HydroUnitBlock:
     
     // Create identity matrix
-    A = std::vector< std::vector<int> >(m, std::vector<int>(m,0));
+    std::vector< std::vector<Function::FunctionValue> > A(m, std::vector<Function::FunctionValue>(m,0));
     for(unsigned int t = 0; t < m; t++)
         A[t][t] = 1;
 
     // Create b vector
-    b = std::vector<int>(m,0);
+    std::vector<Function::FunctionValue> b(m,0);
     
     // Create sides vector
-    sides = std::vector<BendersBFunction::ConstraintSide>(m, BendersBFunction::ConstraintSide::eBoth);
+    std::vector<BendersBFunction::ConstraintSide> sides(m, BendersBFunction::ConstraintSide::eBoth);
     
     // Create constraints pointers vector
-    constraints_pointer = std::vector< RowConstraint * >
+    std::vector< RowConstraint * > constraints_pointer;
     
     for( UnitBlock::Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
         if( hydro_unit_block != nullptr ){
-            auto constraint = hydro_unit_block->get_static_constraints[1];
-            constraints_pointer.push_back( &constraint);
+//            auto constraint = hydro_unit_block->get_static_constraint(1);
+//            constraints_pointer.push_back( &constraint);
         }
     }
+    
+    
+    
+
+    
+    
     
 
     BendersBFunction benders_function( lagrangian_block , z , A , b , constraints_pointer , sides );
