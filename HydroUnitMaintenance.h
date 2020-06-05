@@ -995,6 +995,9 @@ class HydroUnitMaintenance : public UnitBlock {
 
  /// the active power variables
  boost::multi_array< ColVariable , 2 > v_active_power;
+    
+ // the maintenance variables 
+ boost::multi_array< ColVariable , 2 > v_maintenance;
 
  /// the primary spinning reserve variables
  boost::multi_array< ColVariable , 2 > v_primary_spinning_reserve;
@@ -1004,6 +1007,9 @@ class HydroUnitMaintenance : public UnitBlock {
 /*----------------------------constraints-----------------------------------*/
  /// maximum power output according to primary-secondary reserves constraints
  boost::multi_array< FRowConstraint, 2 >  MaxPowerPrimarySecondary_Const;
+    
+ /// xi equal z constraint
+ boost::multi_array< FRowConstraint, 2 >  SplittingVar_Const;
 
  /// minimum power output according to primary-secondary reserves constraints
  boost::multi_array< FRowConstraint, 2 >  MinPowerPrimarySecondary_Const;

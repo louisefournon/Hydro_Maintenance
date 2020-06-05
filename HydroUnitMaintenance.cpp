@@ -177,7 +177,7 @@ void HydroUnitMaintenance::generate_abstract_variables( Configuration *stvv )
   return;
  }
  v_volumetric.resize(boost::extents[f_number_reservoirs][ f_time_horizon]);
- s
+ 
  add_static_variable ( v_volumetric, "vol" );
 
  if( !v_flow_rate.empty() ) {
@@ -259,7 +259,7 @@ void HydroUnitMaintenance::generate_abstract_variables( Configuration *stvv )
   }
  }
   add_static_variable ( v_secondary_spinning_reserve, "sr" );
- AR |= HasVar;
+ // AR |= HasVar;
 } // end( HydroUnitMaintenance::generate_abstract_variables )
 
 /*--------------------------------------------------------------------------*/
@@ -321,7 +321,7 @@ void HydroUnitMaintenance::generate_abstract_constraints( Configuration *stcc ) 
 //////////////////////////////////////////////////////////////////////////////////////
     
     
-    XiEqualZ_Const.resize
+    SplittingVar_Const.resize
                ( boost::multi_array< FRowConstraint, 2 >::
                  extent_gen()[f_time_horizon][f_number_arcs] );
 
@@ -334,14 +334,14 @@ void HydroUnitMaintenance::generate_abstract_constraints( Configuration *stcc ) 
 
         linear_function->add_variable( &v_maintenance[t][arc], 1.0 );
 
-        XiEqualZ_Const_Const[t][arc].set_lhs( 0.0 );
+        SplittingVar_Const[t][arc].set_lhs( 0.0 );
 
-        XiEqualZ_Const[t][arc].set_rhs( 0.0 );
+        SplittingVar_Const[t][arc].set_rhs( 0.0 );
 
       }
     }
     
-    add_static_constraint( XiEqualZ_Const, "XiEqualZ" );
+    add_static_constraint( SplittingVar_Const, "SplittingVar" );
   
 //////////////////////////////////////////////////////////////////////////////////////
         
@@ -848,7 +848,7 @@ void HydroUnitMaintenance::generate_abstract_constraints( Configuration *stcc ) 
  }
 
  add_static_constraint( VolumetricBounds_Const, "VolumetricBounds");
- AR |= HasCst;
+ //AR |= HasCst;
 } // end( HydroUnitMaintenance::generate_abstract_constraints )
 
 
@@ -1047,7 +1047,7 @@ HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
    // *( v_inflows.data() + i ) = *( values++ );
   }
 
-  if( AR & HasCst ) {
+  /*if( AR & HasCst ) {
    // Change the abstract representation
 
    for( auto i : subset ) {
@@ -1064,7 +1064,7 @@ HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
    }
   }
  }
-
+*/
  if( issue_pmod( issuePMod ) ) {
   // Issue a Physical Modification
   if( !ordered ) {
@@ -1115,7 +1115,7 @@ HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
              values + ( rng.second - rng.first ),
              v_inflows.data() + rng.first );
 
-  if( AR & HasCst ) {
+  /*if( AR & HasCst ) {
    // Change the abstract representation
 
    for( Index i = rng.first; i < rng.second; ++i ) {
@@ -1131,7 +1131,7 @@ HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
     }
    }
   }
- }
+ }*/
 
  if( issue_pmod( issuePMod ) ) {
   Block::add_Modification(
@@ -1186,11 +1186,11 @@ HydroUnitMaintenance::set_inertia_power( std::vector< double >::const_iterator v
    v_inertia_power[ t ][ a ] = *( values++ );
   }
 
-  if( AR & HasCst ) {
+  /*if( AR & HasCst ) {
    // Change the abstract representation
    // FIXME: v_inertia_power is not used
   }
- }
+ }*/
 
  if( issue_pmod( issuePMod ) ) {
   // Issue a Physical Modification
@@ -1241,12 +1241,12 @@ HydroUnitMaintenance::set_inertia_power( std::vector< double >::const_iterator v
              values + ( rng.second - rng.first ),
              v_inertia_power.data() + rng.first );
 
-  if( AR & HasCst ) {
+  /*if( AR & HasCst ) {
    // Change the abstract representation
    // FIXME: v_inertia_power is not used
 
   }
- }
+ }*/
 
  if( issue_pmod( issuePMod ) ) {
   Block::add_Modification(
@@ -1305,7 +1305,7 @@ HydroUnitMaintenance::set_initial_volumetric(
    v_initial_volumetric[ i ] = *( temp_values++ );
   }
 
-  if( not_dry_run( issueAMod ) && AR & HasObj ) {
+  /*if( not_dry_run( issueAMod ) && AR & HasObj ) {
    // Change the abstract representation
    for( auto i : subset ) {
     Index t = i % f_time_horizon;
@@ -1318,7 +1318,8 @@ HydroUnitMaintenance::set_initial_volumetric(
    }
   }
  }
-
+ */
+     
  if( issue_pmod( issuePMod ) ) {
   // Issue a Physical Modification
   if( !ordered ) {
@@ -1371,7 +1372,7 @@ HydroUnitMaintenance::set_initial_volumetric(
              values + ( rng.second - rng.first ),
              v_initial_volumetric.begin() + rng.first );
 
-  if( not_dry_run( issueAMod ) && AR & HasCst ) {
+  /*if( not_dry_run( issueAMod ) && AR & HasCst ) {
    // Change the abstract representation
    for( Index i = rng.first; i < rng.second; ++i ) {
     Index t = i % f_time_horizon;
@@ -1383,7 +1384,7 @@ HydroUnitMaintenance::set_initial_volumetric(
     }
    }
   }
- }
+ }*/
 
  if( issue_pmod( issuePMod ) ) {
   Block::add_Modification(
