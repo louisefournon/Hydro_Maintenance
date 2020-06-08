@@ -94,6 +94,8 @@ int main(){
     auto primary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(2); 
     auto secondary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(3); 
     
+    boost::multi_array< FRowConstraint, 3 > splitting_var_constraints; // We create a 3 dimension array that will contain the splitting variables constraint of each hydroUnitBlock
+    
 //    un_any_static( node_injection_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
 //    un_any_static( primary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
 //    un_any_static( secondary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
@@ -112,12 +114,16 @@ int main(){
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
-            auto constraints = hydro_unit_block->get_static_constraint<FRowConstraint, 2>(2);  // "Splitting var" is the second constraint
-//            un_any_static( constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+            int idx = idx_hydro_blocks.size(); // idx to fill our multiarray of constraints splitting_var_constraints
+            auto constraints = hydro_unit_block->get_static_constraint<FRowConstraint, 2>(2);// "Splitting var" is the second constraint
+            splitting_var_constraints[idx - 1] = constraints;
+//          un_any_static( constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+
         }
     }
     
     nb_hydro_blocks = idx_hydro_blocks.size();
+
     
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //          Construction of the object containing the whole lagrangian problem (i.e. lagrangian_block)          //
