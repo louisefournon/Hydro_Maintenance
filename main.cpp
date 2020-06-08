@@ -20,6 +20,11 @@ std::string filename{};
 
 int main(){
     
+    ////////////////////////////////////////////////////////////////////////////////
+    //                             Data extraction                                //
+    ////////////////////////////////////////////////////////////////////////////////
+    
+    
     // Read the netCDF File with all the data
 
     netCDF::NcFile f;
@@ -53,8 +58,14 @@ int main(){
         exit( 1 );
     }
 
+    /////////////////////////////////////////////////////////////////////////////////////////////////////
+    //                 Construction of the initial problem W(z = 0) as defined in section 4                //
+    /////////////////////////////////////////////////////////////////////////////////////////////////////
     
-    // 1) Construct the UCBlock.
+    // In the SMS++ modelization, W(z) is composed of a "general Block" representing the overall problem and constraints (demand constraints etc.) and several thermal and hydro blocks representing our assets.
+    // Note that in this first modelization, W(z) doesn't actually depends on z : the variable xi created by the splitting of the maintenance variable z is set as equal to 0 (i.e. xi = 0 and not xi = z). That constraint will be updated to xi = z later in the model, in the BendersBFunction. 
+    
+    // 1) Construct the UCBlock representing W(z)
 
     auto uc_block = dynamic_cast<UCBlock *>(Block::new_Block( "UCBlock" ));
     uc_block->deserialize( bg );
@@ -69,8 +80,12 @@ int main(){
     unsigned int nb_secondary_zones = uc_block->get_number_secondary_zones();
 
     
+    ////////////////////////////////////////////////////////////////////////////////
+    //       Construction of the lagrangian of W(0) : constraints relaxation      //
+    ////////////////////////////////////////////////////////////////////////////////
+    
+    
     // 1.1) Relax the desired constraints in uc_block.
-        // Constraint has a method called relax(). You should invoke this method for each Constraint you want to relax (and pass true as argument).
     
     
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
@@ -104,13 +119,26 @@ int main(){
     
     nb_hydro_blocks = idx_hydro_blocks.size();
     
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //          Construction of the object containing the whole lagrangian problem (i.e. lagrangian_block)          //
+    //                                 whose supremum will be the theta_0 function                                  //
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+    // Note: We have 2 distincts objects here: lagrangian_block and lagrangian_function. lagrangian_block is the whole lagrangian problem, and it contains lagrangian_function (it's its objective function). The dual function will be obtained after solving the lagrangian_block.
+    
     // 2) Construct the Lagrangian Block (the Block whose objective will be a LagBFunction).
 
     auto lagrangian_block = new AbstractBlock();
+    
+    
+    ///////////////////////////////////////////////////////////////////////////////////////
+    //              Creation of lambda (dual variables) for the lagrangian               //
+    ///////////////////////////////////////////////////////////////////////////////////////
+    
 
         //2.1) Create the variables to the lagrangian_block:
     
-    // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators = f_number_arcs)
+    // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the splittingVar constraints (dimension = nb_generators = f_number_arcs)
     
     // Create the dual variables for the demand constraints
     
@@ -118,7 +146,7 @@ int main(){
     std::vector< std::vector< ColVariable > > lambda_primary_demand(time_horizon, std::vector< ColVariable >(nb_primary_zones));
     std::vector< std::vector< ColVariable > > lambda_secondary_demand(time_horizon, std::vector< ColVariable >(nb_secondary_zones));
     
-    // Create the lambdas of the XiEqualZ constraints 
+    // Create the lambdas of the Splitting variables constraints (xi = z)
     
     std::vector<UnitBlock::Index> nb_generators(nb_hydro_blocks, 0.0); // Number of generators for each hydroUnit (assets)
     
@@ -165,12 +193,17 @@ int main(){
     lagrangian_block->add_static_variable( lambda_primary_demand );
     lagrangian_block->add_static_variable( lambda_secondary_demand );
     lagrangian_block->add_static_variable( lambda_splitting_var );
+    
+    ///////////////////////////////////////////////////////////////////////////////////
+    //       Construction of the actual Lagrangian function (lagrangian_function)    //
+    ///////////////////////////////////////////////////////////////////////////////////
+    
 
-
-        //2.4) Construct the LagBFunction:
+        //2.4) Construct the LagBFunction (objective of our lagrangian_block):
 
     LagBFunction lagrangian_function;
     lagrangian_function.set_inner_block( uc_block );
+    
     
     
 
@@ -219,6 +252,13 @@ int main(){
     auto objective = new FRealObjective( lagrangian_block , & lagrangian_function );
     objective->set_sense( Objective::eMax );
     lagrangian_block->set_objective( objective );
+    
+    
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //            Creation of the \bar W(z) function = supremum of theta_0 updated to theta_z using BendersBlock             //
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    
 
     //3) If you want, construct a BendersBlock that will have the BendersBFunction as the objective function. Let m be the number of z variables i.e. the total number of generators in our system 
     
@@ -232,6 +272,8 @@ int main(){
     std::vector< ColVariable * > z( m );
     for( auto & z_i : benders_block.get_variables() )
         z.push_back( const_cast<ColVariable *>( & z_i ) );
+    
+    // Creation of the mapping that will allow us to update our theta_0 problem to theta_z
     
         //4.2) Create the mapping formed by the m x m identity matrix A, the m-dimensional zero vector b, the m-dimensional ConstraintSide vector with all components equal to BendersBFunction::ConstraintSide::eBoth, and the vector of pointers to the RowConstraints representing z_i = \xi_i that you defined in the HydroUnitBlock:
     
