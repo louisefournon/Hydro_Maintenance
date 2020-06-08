@@ -11,6 +11,7 @@
 #include <HydroUnitMaintenance.h>
 #include <HydroUnitBlock.h>
 #include <Function.h>
+#include <Block.h>
 
 
 using namespace SMSpp_di_unipi_it;
@@ -58,19 +59,29 @@ int main(){
     auto uc_block = dynamic_cast<UCBlock *>(Block::new_Block( "UCBlock" ));
     uc_block->deserialize( bg );
     
+    
+    // 1.0) Get dimensions of our constraints
+    
+    auto network_data = uc_block->get_NetworkData();
+    unsigned int number_nodes = network_data ? network_data->get_number_nodes() : 1;
+    unsigned int time_horizon = uc_block->get_time_horizon();
+    unsigned int primary_zones = uc_block->get_number_primary_zones();
+    unsigned int secondary_zones = uc_block->get_number_secondary_zones();
+
+    
     // 1.1) Relax the desired constraints in uc_block.
         // Constraint has a method called relax(). You should invoke this method for each Constraint you want to relax (and pass true as argument).
     
     
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
 
-//    auto linking_const_0 = uc_block->get_static_constraint(0);  
-//    auto linking_const_1 = uc_block->get_static_constraint(1); 
-//    auto linking_const_2 = uc_block->get_static_constraint(2); 
-//    
-//    un_any_static( linking_const_0 , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
-//    un_any_static( linking_const_1 , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
-//    un_any_static( linking_const_2 , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+    auto node_injection_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(1);  
+    auto primary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(2); 
+    auto secondary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(3); 
+    
+//    un_any_static( node_injection_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+//    un_any_static( primary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+//    un_any_static( secondary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
     
     // Then we look for the constraint x = \xi in each nested block to relax them
     // We also want the indexes and number of hydroUnitBlocks for the rest
@@ -102,9 +113,9 @@ int main(){
     // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators = f_number_arcs)
     
     // Create the dual variables for the demand constraints
-    std::vector< ColVariable > lambda_0(1);
     std::vector< ColVariable > lambda_1(1);
     std::vector< ColVariable > lambda_2(1);
+    std::vector< ColVariable > lambda_3(1);
     
     // Create the lambdas of the XiEqualZ constraints 
     
@@ -126,14 +137,14 @@ int main(){
     
         //2.2) Set the sign of the variables if necessary:
     
-    for( int i = 0; i < lambda_0.size(); i++){
-        lambda_0[i].is_positive( true );
-    }
     for( int i = 0; i < lambda_1.size(); i++){
         lambda_1[i].is_positive( true );
     }
     for( int i = 0; i < lambda_2.size(); i++){
         lambda_2[i].is_positive( true );
+    }
+    for( int i = 0; i < lambda_3.size(); i++){
+        lambda_3[i].is_positive( true );
     }
 
     for( auto & lambda_i : lambda ) {
@@ -145,9 +156,9 @@ int main(){
         //2.3) Add the variables to the Lagrangian Block:
 
     lagrangian_block->add_static_variable( lambda );
-    lagrangian_block->add_static_variable( lambda_0 );
     lagrangian_block->add_static_variable( lambda_1 );
     lagrangian_block->add_static_variable( lambda_2 );
+    lagrangian_block->add_static_variable( lambda_3 );
 
 
         //2.4) Construct the LagBFunction:
@@ -159,15 +170,17 @@ int main(){
 
         //2.5) Associate each lambda_i with a relaxed function (a Function belonging to a relaxed RowConstraint; FRowConstraint has the method get_function() to retrieve a pointer to the Function associated with that Constraint):
     
-//    std::pair l_0( lambda_0, linking_const[0].get_function() );
-//    std::pair l_1( lambda_1, linking_const[1].get_function() );
-//    std::pair l_2( lambda_2, linking_const[2].get_function() );
-//                  
-//    
-//    lagrangian_function.set_dual_pairs( l_0 );
+        std::pair < std::vector< ColVariable >, Function * > l_1_i( lambda_1, node_injection_constraints[0][0].get_function() );
+    
+//    std::pair l_1( lambda_1, node_injection_constraints->get_function() );
+//    std::pair l_2( lambda_1, node_injection_constraints->get_function() );
+//    std::pair l_3( lambda_2, node_injection_constraints->get_function() );
+                  
+    
 //    lagrangian_function.set_dual_pairs( l_1 );
 //    lagrangian_function.set_dual_pairs( l_2 );
-    
+//    lagrangian_function.set_dual_pairs( l_3 );
+//    
     for( UnitBlock::Index i : idx_hydro_blocks ) {
         
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
@@ -222,15 +235,8 @@ int main(){
 //            constraints_pointer.push_back( &constraint);
         }
     }
-    
-    
-    
 
-    
-    
-    
-
-    BendersBFunction benders_function( lagrangian_block , z , A , b , constraints_pointer , sides );
+    BendersBFunction benders_function( lagrangian_block ,  std::move(z) ,  std::move(A) ,  std::move(b) , std::move(constraints_pointer) , std::move(sides) );
 
     //5) Add the BendersBFunction as the Objective of the BendersBlock
 
