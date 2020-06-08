@@ -65,8 +65,8 @@ int main(){
     auto network_data = uc_block->get_NetworkData();
     unsigned int number_nodes = network_data ? network_data->get_number_nodes() : 1;
     unsigned int time_horizon = uc_block->get_time_horizon();
-    unsigned int primary_zones = uc_block->get_number_primary_zones();
-    unsigned int secondary_zones = uc_block->get_number_secondary_zones();
+    unsigned int nb_primary_zones = uc_block->get_number_primary_zones();
+    unsigned int nb_secondary_zones = uc_block->get_number_secondary_zones();
 
     
     // 1.1) Relax the desired constraints in uc_block.
@@ -97,7 +97,7 @@ int main(){
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
-//            auto constraints = hydro_unit_block->get_static_constraint(1);  // "XiEqualZ" is the second constraint
+            auto constraints = hydro_unit_block->get_static_constraint<FRowConstraint, 2>(2);  // "Splitting var" is the second constraint
 //            un_any_static( constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
         }
     }
@@ -113,52 +113,58 @@ int main(){
     // We have 3 lambdas for the 3 demand constraints (dimension = 1) and nb_hydro_blocks other lambdas for the XiEqualZ constraints (dimension = nb_generators = f_number_arcs)
     
     // Create the dual variables for the demand constraints
-    std::vector< ColVariable > lambda_1(1);
-    std::vector< ColVariable > lambda_2(1);
-    std::vector< ColVariable > lambda_3(1);
+    
+    std::vector< std::vector< ColVariable > > lambda_node_injection(time_horizon, std::vector< ColVariable >(number_nodes));
+    std::vector< std::vector< ColVariable > > lambda_primary_demand(time_horizon, std::vector< ColVariable >(nb_primary_zones));
+    std::vector< std::vector< ColVariable > > lambda_secondary_demand(time_horizon, std::vector< ColVariable >(nb_secondary_zones));
     
     // Create the lambdas of the XiEqualZ constraints 
     
-    int m = 0; // Total number of generators (assets)
+    std::vector<UnitBlock::Index> nb_generators(nb_hydro_blocks, 0.0); // Number of generators for each hydroUnit (assets)
     
-    std::vector< std::vector< ColVariable > > lambda;
+    std::vector<std::vector<std::vector< ColVariable > > > lambda_splitting_var; 
+    
     for( UnitBlock::Index i : idx_hydro_blocks ) {
-        
+    
         auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
+        
         if( hydro_unit_block != nullptr ){
             UnitBlock::Index n_i = hydro_unit_block->get_number_generators();
-            std::vector< ColVariable > subLambda(n_i);
-            lambda.push_back(subLambda); 
-            m += n_i;
+            std::vector< std::vector<ColVariable>> subLambda(time_horizon, std::vector< ColVariable >(n_i));
+            lambda_splitting_var.push_back(subLambda); 
+            nb_generators[i] = n_i;
         }
     }
     
-    
         //2.2) Set the sign of the variables if necessary:
     
-    for( int i = 0; i < lambda_1.size(); i++){
-        lambda_1[i].is_positive( true );
+    for( int t = 0; t < time_horizon; t++){
+        for( int j = 0; j < number_nodes; j++){
+            lambda_node_injection[t][j].is_positive( true );
+        }
+        for( int j = 0; j < nb_primary_zones; j++){
+            lambda_primary_demand[t][j].is_positive( true );
+        }
+        for( int j = 0; j < nb_secondary_zones; j++){
+            lambda_secondary_demand[t][j].is_positive( true );
+        }
     }
-    for( int i = 0; i < lambda_2.size(); i++){
-        lambda_2[i].is_positive( true );
-    }
-    for( int i = 0; i < lambda_3.size(); i++){
-        lambda_3[i].is_positive( true );
-    }
-
-    for( auto & lambda_i : lambda ) {
-        for(int k = 0; k < lambda_i.size(); k++){
-            lambda_i[k].is_positive( true );
+    
+    for(int i = 0; i < nb_hydro_blocks; i++) {
+        for(int t = 0; t < time_horizon; t++){
+            for(UnitBlock::Index j = 0; j < nb_generators[i]; j++){
+                lambda_splitting_var[i][t][j].is_positive( true );
+            }
         }
     }
 
         //2.3) Add the variables to the Lagrangian Block:
 
-    lagrangian_block->add_static_variable( lambda );
-    lagrangian_block->add_static_variable( lambda_1 );
-    lagrangian_block->add_static_variable( lambda_2 );
-    lagrangian_block->add_static_variable( lambda_3 );
+    lagrangian_block->add_static_variable( lambda_node_injection );
+    lagrangian_block->add_static_variable( lambda_primary_demand );
+    lagrangian_block->add_static_variable( lambda_secondary_demand );
+    lagrangian_block->add_static_variable( lambda_splitting_var );
 
 
         //2.4) Construct the LagBFunction:
@@ -170,24 +176,41 @@ int main(){
 
         //2.5) Associate each lambda_i with a relaxed function (a Function belonging to a relaxed RowConstraint; FRowConstraint has the method get_function() to retrieve a pointer to the Function associated with that Constraint):
     
-        std::pair < std::vector< ColVariable >, Function * > l_1_i( lambda_1, node_injection_constraints[0][0].get_function() );
+    for( int t = 0; t < time_horizon; t++){
+
+        for( int j = 0; j < number_nodes; j++){
+            
+            Function * function = node_injection_constraints[t][j].get_function();
+            std::pair < std::vector< ColVariable >, Function * > node_injection( lambda_node_injection[t][j], function );
+            lagrangian_function.set_dual_pairs(node_injection);
+        }
+        for( int j = 0; j < nb_primary_zones; j++){
+            
+            Function * function = primary_demand_constraints[t][j].get_function(); 
+            std::pair < std::vector< ColVariable >, Function * > primary_demand( lambda_primary_demand[t][j],function );
+
+            lagrangian_function.set_dual_pairs(primary_demand);
+        }
+        for( int j = 0; j < nb_secondary_zones; j++){
+            
+            Function * function = secondary_demand_constraints[t][j].get_function();
+            std::pair < std::vector< ColVariable >, Function * > secondary_demand( lambda_secondary_demand[t][j], function );
+            lagrangian_function.set_dual_pairs(secondary_demand);
+        }
+    }
     
-//    std::pair l_1( lambda_1, node_injection_constraints->get_function() );
-//    std::pair l_2( lambda_1, node_injection_constraints->get_function() );
-//    std::pair l_3( lambda_2, node_injection_constraints->get_function() );
-                  
     
-//    lagrangian_function.set_dual_pairs( l_1 );
-//    lagrangian_function.set_dual_pairs( l_2 );
-//    lagrangian_function.set_dual_pairs( l_3 );
-//    
-    for( UnitBlock::Index i : idx_hydro_blocks ) {
+    for(int i = 0; i < nb_hydro_blocks; i++) {
         
-        auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
-        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block);
-        if( hydro_unit_block != nullptr ){
-//            auto constraint = hydro_unit_block->get_static_constraint(1);
-//            lagrangian_function.set_dual_pairs( std::pair l( lambda[i], constraint.get_function() ) );
+        for(int t = 0; t < time_horizon; t++){
+            
+            for(UnitBlock::Index j = 0; j < nb_generators[i]; j++){
+                
+                Function * function = splitting_var_constraints[t][j].get_function();
+                std::pair < std::vector< ColVariable >, Function * > splitting_var( lambda_splitting_var[i][t][j], function );
+                lagrangian_function.set_dual_pairs(splitting_var);
+                
+            }
         }
     }
 
