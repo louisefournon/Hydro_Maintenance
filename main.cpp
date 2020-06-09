@@ -90,13 +90,13 @@ int main(){
     
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
 
-    auto node_injection_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(1);  
-    auto primary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(2); 
-    auto secondary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(3); 
+    auto node_injection_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(0);  
+    auto primary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(1); 
+    auto secondary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(2); 
     
     boost::multi_array< FRowConstraint, 3 > splitting_var_constraints; // We create a 3 dimension array that will contain the splitting variables constraint of each hydroUnitBlock
     
-//    un_any_static( node_injection_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
+    //un_any_static( node_injection_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
 //    un_any_static( primary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
 //    un_any_static( secondary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
     
@@ -219,20 +219,20 @@ int main(){
 
         for( int j = 0; j < number_nodes; j++){
             
-            Function * function = node_injection_constraints[t][j].get_function();
+            Function * function = ( *node_injection_constraints)[t][j].get_function();
             std::pair < std::vector< ColVariable >, Function * > node_injection( lambda_node_injection[t][j], function );
             lagrangian_function.set_dual_pairs(node_injection);
         }
         for( int j = 0; j < nb_primary_zones; j++){
             
-            Function * function = primary_demand_constraints[t][j].get_function(); 
+            Function * function = ( *primary_demand_constraints)[t][j].get_function(); 
             std::pair < std::vector< ColVariable >, Function * > primary_demand( lambda_primary_demand[t][j],function );
 
             lagrangian_function.set_dual_pairs(primary_demand);
         }
         for( int j = 0; j < nb_secondary_zones; j++){
             
-            Function * function = secondary_demand_constraints[t][j].get_function();
+            Function * function = ( *secondary_demand_constraints)[t][j].get_function();
             std::pair < std::vector< ColVariable >, Function * > secondary_demand( lambda_secondary_demand[t][j], function );
             lagrangian_function.set_dual_pairs(secondary_demand);
         }
