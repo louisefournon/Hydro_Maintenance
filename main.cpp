@@ -90,11 +90,13 @@ int main(){
     
     // First we relax the demand constraints which are the first 3 constraints: v_node_injection_constraints, v_PrimaryDemand_Const, v_SecondaryDemand_Const 
 
+    // We get the constraints
+    
     auto node_injection_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(0);  
     auto primary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(1); 
     auto secondary_demand_constraints = uc_block->get_static_constraint<FRowConstraint, 2>(2); 
     
-    boost::multi_array< FRowConstraint, 3 > splitting_var_constraints; // We create a 3 dimension array that will contain the splitting variables constraint of each hydroUnitBlock
+    // We relax them 
     
     auto n = node_injection_constraints->num_elements();
 
@@ -111,12 +113,6 @@ int main(){
     for( auto c = secondary_demand_constraints->data() ; c < ( secondary_demand_constraints->data() + n ) ; ++c )
         c->relax( true );
     
-    
-    
-    //un_any_static( node_injection_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
-//    un_any_static( primary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
-//    un_any_static( secondary_demand_constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
-    
     // Then we look for the constraint x = \xi in each nested block to relax them
     // We also want the indexes and number of hydroUnitBlocks for the rest
     
@@ -131,11 +127,11 @@ int main(){
         auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
         if( hydro_unit_block != nullptr ){
             idx_hydro_blocks.push_back(i);
-            int idx = idx_hydro_blocks.size(); // idx to fill our multiarray of constraints splitting_var_constraints
+    
             auto constraints = hydro_unit_block->get_static_constraint<FRowConstraint, 2>(2);// "Splitting var" is the second constraint
-            splitting_var_constraints[idx - 1] = constraints;
-//          un_any_static( constraints , []( Constraint * constraint ) { constraint->relax( true ); } , un_any_type<Constraint> );
-
+            n = constraints->num_elements();
+            for( auto c = constraints->data() ; c < ( constraints->data() + n ) ; ++c )
+                c->relax( true );
         }
     }
     
@@ -188,6 +184,8 @@ int main(){
         }
     }
     
+
+    
         //2.2) Set the sign of the variables if necessary:
     
     for( int t = 0; t < time_horizon; t++){
@@ -237,8 +235,8 @@ int main(){
         for( int j = 0; j < number_nodes; j++){
             
             Function * function = ( *node_injection_constraints)[t][j].get_function();
-            //std::vector< std::pair < ColVariable \ , Function \ > > node_injection( lambda_node_injection[t][j], function );
-            // std::pair < std::vector< ColVariable >, Function * > node_injection( lambda_node_injection[t][j], function );
+            //std::vector< std::pair < ColVariable * , Function * > > node_injection( lambda_node_injection[t][j], function );
+            //std::pair < std::vector< ColVariable >, Function * > node_injection( lambda_node_injection[t][j], function );
             //lagrangian_function.set_dual_pairs(node_injection);
         }
         for( int j = 0; j < nb_primary_zones; j++){
@@ -256,20 +254,25 @@ int main(){
         }
     }
     
-    
-    for(int i = 0; i < nb_hydro_blocks; i++) {
+       
+    for( UnitBlock::Index i = 0 ; i < sb.size() ; ++i ) { // Each i is a subblock (thermal or hydro)
         
-        for(int t = 0; t < time_horizon; t++){
+        auto unit_block = dynamic_cast<UnitBlock *>( sb[i] );
+        auto hydro_unit_block = dynamic_cast<HydroUnitBlock *>(unit_block); // I believe this only creates a block if it's a hydroUnitBlock right ?
+        if( hydro_unit_block != nullptr ){
             
-            for(UnitBlock::Index j = 0; j < nb_generators[i]; j++){
-                
-                Function * function = ( *splitting_var_constraints[i])[t][j].get_function();
-                std::pair < std::vector< ColVariable >, Function * > splitting_var( lambda_splitting_var[i][t][j], function );
-                lagrangian_function.set_dual_pairs(splitting_var);
-                
+            auto constraints = hydro_unit_block->get_static_constraint<FRowConstraint, 2>(2);// "Splitting var" is the second constraint
+            for(int t = 0; t < time_horizon; t++){
+                for(UnitBlock::Index j = 0; j < nb_generators[i]; j++){
+                    Function * function = ( *constraints)[t][j].get_function();
+                    //std::pair < std::vector< ColVariable >, Function * > splitting_var( lambda_splitting_var[t][j], function );
+                    //lagrangian_function.set_dual_pairs(splitting_var);
+                }
             }
         }
     }
+
+    
 
         //2.6) Add the Objective to the Lagrangian Block.
 
@@ -286,6 +289,7 @@ int main(){
 
     //3) If you want, construct a BendersBlock that will have the BendersBFunction as the objective function. Let m be the number of z variables i.e. the total number of generators in our system 
     
+    int m = std::accumulate( nb_generators.begin(), nb_generators.end(),0);
 
     BendersBlock benders_block( nullptr , m);
 
