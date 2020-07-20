@@ -210,10 +210,10 @@ int main(){
 
         //2.3) Add the variables to the Lagrangian Block:
 
-    lagrangian_block->add_static_variable( lambda_node_injection );
-    lagrangian_block->add_static_variable( lambda_primary_demand );
-    lagrangian_block->add_static_variable( lambda_secondary_demand );
-    lagrangian_block->add_static_variable( lambda_splitting_var );
+//    lagrangian_block->add_static_variable( lambda_node_injection );
+//    lagrangian_block->add_static_variable( lambda_primary_demand );
+//    lagrangian_block->add_static_variable( lambda_secondary_demand );
+//    lagrangian_block->add_static_variable( lambda_splitting_var );
     
     ///////////////////////////////////////////////////////////////////////////////////
     //       Construction of the actual Lagrangian function (lagrangian_function)    //
@@ -291,15 +291,15 @@ int main(){
     
     int m = std::accumulate( nb_generators.begin(), nb_generators.end(),0);
 
-    BendersBlock benders_block( nullptr , m);
+    //BendersBlock benders_block( nullptr , m);
 
     //4) Construct the BendersBFunction.
 
         //4.1) Create a vector of pointers to z (z doesn't exist yet in our UCBlock, for now we have \xi = 0. BendersBFunction will later update the constraints of UCBlock using the mapping to include the dependance in z in the constraints \xi = z):
 
     std::vector< ColVariable * > z( m );
-    for( auto & z_i : benders_block.get_variables() )
-        z.push_back( const_cast<ColVariable *>( & z_i ) );
+    //for( auto & z_i : benders_block.get_variables() )
+    //    z.push_back( const_cast<ColVariable *>( & z_i ) );
     
     // Creation of the mapping that will allow us to update our theta_0 problem to theta_z
     
@@ -333,7 +333,7 @@ int main(){
 
     //5) Add the BendersBFunction as the Objective of the BendersBlock
 
-    benders_block.set_function( & benders_function );
+    //benders_block.set_function( & benders_function );
     
     
 }
