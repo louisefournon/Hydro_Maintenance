@@ -1078,6 +1078,7 @@ HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
    Observer::par2chnl( issuePMod ) );
  }
 }
+}
 
 void
 HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
@@ -1140,6 +1141,7 @@ HydroUnitMaintenance::set_inflow( std::vector< double >::const_iterator values,
                                               rng ),
    Observer::par2chnl( issuePMod ) );
  }
+}
 }
 
 void
@@ -1205,6 +1207,7 @@ HydroUnitMaintenance::set_inertia_power( std::vector< double >::const_iterator v
    Observer::par2chnl( issuePMod ) );
  }
 }
+}
 
 void
 HydroUnitMaintenance::set_inertia_power( std::vector< double >::const_iterator values,
@@ -1255,6 +1258,7 @@ HydroUnitMaintenance::set_inertia_power( std::vector< double >::const_iterator v
                                               rng ),
    Observer::par2chnl( issuePMod ) );
  }
+}
 }
 
 void
@@ -1332,6 +1336,7 @@ HydroUnitMaintenance::set_initial_volumetric(
    Observer::par2chnl( issuePMod ) );
  }
 }
+}
 
 void
 HydroUnitMaintenance::set_initial_volumetric(
@@ -1405,6 +1410,7 @@ void HydroUnitMaintenance::transpose( boost::multi_array< T, 2 > & a ) {
   a.reshape( dims );
  }
 }
+}
 
 void HydroUnitMaintenance::decompress_array( boost::multi_array< double, 2 > & a ) {
 
@@ -1472,6 +1478,7 @@ void HydroUnitMaintenance::decompress_vol( boost::multi_array< double, 2 > & a )
   }
  }
 }
+
 /*--------------------------------------------------------------------------*/
 /*------------------- End File HydroUnitMaintenance.cpp --------------------------*/
 /*--------------------------------------------------------------------------*/
