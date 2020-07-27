@@ -623,5 +623,5 @@ lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256
 lamb2_0 = np.zeros(len(z))
 
 lamb_0 = [lamb1_0, lamb2_0]
-
+print(sys.version_info)
 print(bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z))
