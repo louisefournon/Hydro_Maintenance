@@ -438,6 +438,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
 # Lambda in argument has dimension T*(nbPbThermal + nbPbHydro)
 
 def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, Vmin = None, Vmax = None, nRes = None, nbTurbine = None, mxFlow = None, mxPow = None, sigT = None, wvals = None, nominf = None, therm_grad = None, therm_cost = None, pow_max = None, initP = None, z = None):
+  # pow_max is for hydro and mxPow for hydro
   theta = 0
   sg1 = np.zeros(T)
   sg2 = np.zeros(len(z))
@@ -518,11 +519,6 @@ def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, i
   lamb2_vars = np.array([ opt_model.continuous_var() for j in range(nbVars2) ])
   
   # Set constraints
-  print("len(lamb1_vars) = ", len(lamb1_vars))
-  print("len(subgradient_bundle[j][0] = ", len(subgradient_bundle[0][0]))
-  print("len(lamb2_vars) = ", len(lamb2_vars))
-  print("len(subgradient_bundle[j][1]) = ", len(subgradient_bundle[0][1]))
-  
   cp_constraints = { j : opt_model.add_constraint( 
     ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1],subgradient_bundle[j][1]) <= f_lev) for j in range(len(iterates))}
   
@@ -581,7 +577,8 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
   nbVars2 = len(lamb_0[1])
 
   iterates = [[lamb_0[0], lamb_0[1]]]
-
+  
+  
   oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
   
   function_bundle = [-oracle[0]]
@@ -612,12 +609,12 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
     else :
       
       iterates.append(next_it)
-      oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, iterates[-1], A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP)
+
+      oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, iterates[-1], A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
 
       function_bundle.append(-oracle[0])
       print("Function evaluation = ", oracle[0]) 
-      subgradient_bundle.append(-oracle[1])
-      sys.exit()
+      subgradient_bundle.append([-oracle[1], -oracle[2]])
     k = k+1
     obj = delta + f_low
     print("f_lev = ", f_lev)
@@ -648,6 +645,7 @@ lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256
 lamb2_0 = np.zeros(len(z))
 
 lamb_0 = [lamb1_0, lamb2_0]
-#print(sys.version_info)
+
+
 
 print(bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z))
