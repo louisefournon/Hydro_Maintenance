@@ -495,7 +495,7 @@ def compute_delta(function_bundle, f_low):
 # Let nbRows be the number of rows of the \tilde A matrix (i.e. also the number of components of \tilde b)
 
 
-def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, z = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
   
   nbVars1 = len(stab_center[0])
   nbVars2 = len(stab_center[1])
@@ -514,12 +514,17 @@ def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, i
   # x_vars = { t : opt_model.continuous_var() for t in range(T) }
   
   # Add decision variables
-  lamb1_vars = { t : opt_model.continuous_var() for t in range(nbVars1) }
-  lamb2_vars = { j : opt_model.continuous_var() for j in range(nbVars2) }
+  lamb1_vars = np.array([ opt_model.continuous_var() for t in range(nbVars1) ])
+  lamb2_vars = np.array([ opt_model.continuous_var() for j in range(nbVars2) ])
   
   # Set constraints
+  print("len(lamb1_vars) = ", len(lamb1_vars))
+  print("len(subgradient_bundle[j][0] = ", len(subgradient_bundle[0][0]))
+  print("len(lamb2_vars) = ", len(lamb2_vars))
+  print("len(subgradient_bundle[j][1]) = ", len(subgradient_bundle[0][1]))
+  
   cp_constraints = { j : opt_model.add_constraint( 
-    ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0],subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1],subgradient_bundle[j][1])) for j in range(len(iterates))}
+    ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1],subgradient_bundle[j][1]) <= f_lev) for j in range(len(iterates))}
   
   # cp_constraints = {j : opt_model.add_constraint(
   #     ct=opt_model.sum(lin_ct1[j,t] * x_vars[t] for t in range(T)) <= const_ct1[j]) for j in range(len(iterates))}
@@ -580,7 +585,7 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
   oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
   
   function_bundle = [-oracle[0]]
-  subgradient_bundle = [-oracle[1]]
+  subgradient_bundle = [[-oracle[1], -oracle[2]]]
   delta = tol + 1
   best_index = 0
   while (delta > tol and k < 10):
@@ -597,7 +602,7 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
     best_index = delta_pair[0]
     f_lev = f_low + gamma*delta
   
-    next_it_pair = find_next_iterate(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T, z, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None)
+    next_it_pair = find_next_iterate(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None)
     
     next_it = next_it_pair[1]
     isEmptyL = next_it_pair[0]
