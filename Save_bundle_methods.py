@@ -5,6 +5,7 @@
 
 import numpy as np
 import random
+import docplex.util.environment as environment
 from docplex.util.status import JobSolveStatus
 import docplex.mp.model as cpx
 import sys 
@@ -298,7 +299,7 @@ def turbine_belong(iR, sigma_T, nbTurbine):
       break
   return [int(kOff), int(nbTur)]
   
-def set_hydro_constraints(opt_model, x_vars, xi_vars, x_u, nRes, nbVars, nbTurbine, T, inflow_nom, V0, Vmin, Vmax, dt, sigT, A_connect, z):
+def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, inflow_nom, V0, Vmin, Vmax, dt, sigT, A_connect, xi_vars = None):
     
   AnRes = np.zeros(nRes)
   AnOff = np.zeros(nRes)
@@ -328,12 +329,13 @@ def set_hydro_constraints(opt_model, x_vars, xi_vars, x_u, nRes, nbVars, nbTurbi
       for kAn in range(nbAn):
         for k in range(int(AnOff[kAn]), int(AnOff[kAn] + AnNum[kAn])):
           a_[i*nbTurbine + k ] = 1.0*dt
-          
-      # Set the maintenance constraints
-      nbMainTurb = int(len(z)/nMaintenance)
-      for i in range(nbMainTurb):
-        for k in range(nMaintenance):
-          maint_ct = { t : opt_model.add_constraint(x_vars[i*T + t] <= x_u[T*i + t]*xi_vars[nMaintenance*i + k]) for t in range(int(k*T/nMaintenance), int((k+1)*T/nMaintenance)) }
+        
+      if xi_vars is not None:
+        # Set the maintenance constraints
+        nbMainTurb = int(len(z)/nMaintenance)
+        for i in range(nbMainTurb):
+          for k in range(nMaintenance):
+            maint_ct = { t : opt_model.add_constraint(x_vars[i*T + t] <= x_u[T*i + t]*xi_vars[nMaintenance*i + k]) for t in range(int(k*T/nMaintenance), int((k+1)*T/nMaintenance)) }
       
     
       # Add the Constraint
@@ -371,10 +373,9 @@ def set_hydro_constraints(opt_model, x_vars, xi_vars, x_u, nRes, nbVars, nbTurbi
 # The "current_point" is of the form [ x[i,t],..., V_i[0],...,V_i[T] ]
 
 
-def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, z = None):
+def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, i = None, z = None):
 
   nbVars1 = T*nbTurbine + 2*nRes
-  nbVars2 = len(z)
   # Create model
   opt_model = cpx.Model(name="Sub Problem Hydro")
   opt_model.parameters.qpmethod = 2
@@ -383,9 +384,9 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   rhoEff = efficiency(nRes, sigT, mxFlow, mxPow, wvals, nbTurbine)[0]
   c = np.zeros(nbVars1)
   
-  for i in range(T):
+  for t in range(T):
     for j in range(nbTurbine): 
-      c[i*nbTurbine + j] = -1.0*rhoEff[j]*lamb[0][i]*dt
+      c[t*nbTurbine + j] = -1.0*rhoEff[j]*lamb[0][t]*dt
           
   for i in range(nRes):
     c[T*nbTurbine + i] = wvals[i]
@@ -395,17 +396,24 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   
   # For hydro units, the decision variables are the volume in each reservoir and the flow for each turbine
   x_u = upper_bound(T, nbTurbine, nRes, sigT, mxFlow, mxPow, wvals, Vmax, Vmin)
-  if not z is None: # z should have nTurbine rows and 2 columns for each period
-    xi_vars = { i : opt_model.binary_var() for i in range(nbVars2) }
-    
-  # We represent the variable in the following form : [x[i,t],..., z_i[0],...,z_i[T]]
-  x_vars = { i : opt_model.continuous_var(ub = x_u[i]) for i in range(nbVars1) }
-    
-  # Set constraints
-  set_hydro_constraints(opt_model, x_vars, xi_vars,  x_u, nRes, nbVars1, nbTurbine, T, nominf, V0, Vmin, Vmax, dt, sigT, A_connect, z)
   
-  # Set objective
-  objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1)) - opt_model.sum(lamb[1][i]* xi_vars[i] for i in range(len(z)))
+  # We represent the x_vars variable in the following form : [x[i,t],..., z_i[0],...,z_i[T]]
+  x_vars = { i : opt_model.continuous_var(ub = x_u[i]) for i in range(nbVars1) }
+  
+  if not z is None: # z should have nb Maintenance periods rows and nbTurbine columns 
+    xi_vars = { i : opt_model.binary_var() for i in range(len(z)) } # xi and z must have the same dimension
+    # Set constraints with z
+    set_hydro_constraints(opt_model, x_vars,  x_u, nRes, nbVars1, nbTurbine, T, nominf, V0, Vmin, Vmax, dt, sigT, A_connect, xi_vars)
+    # Set objective with z
+    objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1)) - opt_model.sum(lamb[1][i]* xi_vars[i] for i in range(len(z)))
+    
+  else:
+    # Set constraints without z
+    set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars1, nbTurbine, T, nominf, V0, Vmin, Vmax, dt, sigT, A_connect)
+    # Set objective without z
+    objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1))
+    
+  # Set objective sense
   opt_model.minimize(objective)
 
   # Solve
@@ -416,7 +424,9 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   
   if(opt_model.get_solve_status() == JobSolveStatus.OPTIMAL_SOLUTION):
     val = np.array([opt_model.solution[x_vars[i]] for i in range(nbVars1)])
-    xi = np.array([opt_model.solution[xi_vars[i]] for i in range(nbVars2)])
+    xi = None
+    if z is not None:
+      xi = np.array([opt_model.solution[xi_vars[i]] for i in range(len(z))])
     aPower = np.zeros(T)
     for i in range(T):
         for j in range(nbTurbine):
@@ -435,22 +445,33 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
   if(nbPbTherm > 0):
     for i in range(nbPbTherm):
       oracle = oracleTherm(lamb, i, therm_grad, therm_cost, pow_max, initP, T, dt)
+      # print(oracle)
       theta += oracle[0] # Objective
       sg1 -= oracle[1]*dt # Active power (size T)
-      print("oracle[0] = ", oracle[0])
-      print("Power = ", oracle[1])
+      print("obj therm ", i, " = ", oracle[0])
+  
   if(nbPbHydro > 0):
     for i in range(nbPbHydro):
-      oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], z)
+      print("len(z)/nMaintenance ", len(z)/nMaintenance )
+      print(i)
+      if(i < len(z)/nMaintenance) : # I.e. if nb turbines we do maintenance on > nb current turbine
+        print("OUI")
+        oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], i, z)
+      else:
+        oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i])
       theta += oracle[0] # Objective
       sg1 -= oracle[1]*dt # Active power (size T)
-      if(len(oracle) > 2):
+      if(oracle[2] is not None):
+        print("YES")
         theta += np.dot(lamb[1], z - oracle[2])
         sg2 += z - oracle[2]
-      print("oracle[0] = ", oracle[0])
-      print("Power = ", oracle[1])
+      print("obj hydro ", i, " = ", oracle[0])
+      # print("oracle[0] = ", oracle[0])
+      # print("Power = ", oracle[1])
+  print("theta = ", theta)
   theta += np.dot(demand, lamb[0])
   sg1 += demand*dt
+  
   return [theta, sg1, sg2]
 
 
@@ -474,7 +495,7 @@ def compute_delta(function_bundle, f_low):
 # Let nbRows be the number of rows of the \tilde A matrix (i.e. also the number of components of \tilde b)
 
 
-def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, z = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
   
   nbVars1 = len(stab_center[0])
   nbVars2 = len(stab_center[1])
@@ -562,8 +583,7 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
   subgradient_bundle = [-oracle[1]]
   delta = tol + 1
   best_index = 0
-  sys.exit()
-  while (delta > tol and k < 250):
+  while (delta > tol and k < 10):
 
     print("k = ", k)
     print("f_low = ", f_low)
@@ -576,6 +596,7 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
     
     best_index = delta_pair[0]
     f_lev = f_low + gamma*delta
+  
     next_it_pair = find_next_iterate(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T, z, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None)
     
     next_it = next_it_pair[1]
@@ -597,7 +618,6 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
     print("f_lev = ", f_lev)
 
   return [iterates[best_index], obj]
-
 
 nbPbTherm = nbThermal
 nbPbHydro = 2
@@ -623,5 +643,6 @@ lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256
 lamb2_0 = np.zeros(len(z))
 
 lamb_0 = [lamb1_0, lamb2_0]
-print(sys.version_info)
+#print(sys.version_info)
+
 print(bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z))
