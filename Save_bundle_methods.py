@@ -332,7 +332,7 @@ def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, in
         
       if xi_vars is not None:
         # Set the maintenance constraints
-        nbMainTurb = int(len(z)/nMaintenance)
+        nbMainTurb = int(len(xi_vars)/nMaintenance)
         for i in range(nbMainTurb):
           for k in range(nMaintenance):
             maint_ct = { t : opt_model.add_constraint(x_vars[i*T + t] <= x_u[T*i + t]*xi_vars[nMaintenance*i + k]) for t in range(int(k*T/nMaintenance), int((k+1)*T/nMaintenance)) }
@@ -405,7 +405,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     # Set constraints with z
     set_hydro_constraints(opt_model, x_vars,  x_u, nRes, nbVars1, nbTurbine, T, nominf, V0, Vmin, Vmax, dt, sigT, A_connect, xi_vars)
     # Set objective with z
-    objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1)) - opt_model.sum(lamb[1][i]* xi_vars[i] for i in range(len(z)))
+    objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1)) - opt_model.sum(lamb[1][i]*xi_vars[i] for i in range(len(z)))
     
   else:
     # Set constraints without z
@@ -427,6 +427,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     xi = None
     if z is not None:
       xi = np.array([opt_model.solution[xi_vars[i]] for i in range(len(z))])
+      print("xi = ", xi)
     aPower = np.zeros(T)
     for i in range(T):
         for j in range(nbTurbine):
@@ -435,7 +436,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     return [obj, aPower, xi]
 
 
-# Lambda in argument has dimension T*(nbPbThermal + nbPbHydro)
+# Lambda1 in argument has dimension T*(nbPbThermal + nbPbHydro)
 
 def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, Vmin = None, Vmax = None, nRes = None, nbTurbine = None, mxFlow = None, mxPow = None, sigT = None, wvals = None, nominf = None, therm_grad = None, therm_cost = None, pow_max = None, initP = None, z = None):
   # pow_max is for hydro and mxPow for hydro
@@ -496,23 +497,14 @@ def compute_delta(function_bundle, f_low):
 # Let nbRows be the number of rows of the \tilde A matrix (i.e. also the number of components of \tilde b)
 
 
-def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def find_next_lambda(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
   
+
   nbVars1 = len(stab_center[0])
   nbVars2 = len(stab_center[1])
   # Create model
   opt_model = cpx.Model(name="Sub Problem")
   opt_model.parameters.qpmethod = 2
-  
-  # Ct1 = cutting planes model level constraint
-  # lin_ct1 = { (j,t) : subgradient_bundle[j][t] for t in range(T) for j in range(len(iterates)) }
-  # 
-  # const_ct1 = { j : f_lev - function_bundle[j] + np.dot(subgradient_bundle[j][0],iterates[j][0]) + np.dot(subgradient_bundle[j][1],iterates[j][1]) for j in range(len(iterates)) }
-  
-
-  # Add decision variables
-  # Actually these are the lambda variables
-  # x_vars = { t : opt_model.continuous_var() for t in range(T) }
   
   # Add decision variables
   lamb1_vars = np.array([ opt_model.continuous_var() for t in range(nbVars1) ])
@@ -520,16 +512,10 @@ def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, i
   
   # Set constraints
   cp_constraints = { j : opt_model.add_constraint( 
-    ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1],subgradient_bundle[j][1]) <= f_lev) for j in range(len(iterates))}
-  
-  # cp_constraints = {j : opt_model.add_constraint(
-  #     ct=opt_model.sum(lin_ct1[j,t] * x_vars[t] for t in range(T)) <= const_ct1[j]) for j in range(len(iterates))}
-
+    ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1], subgradient_bundle[j][1]) <= f_lev) for j in range(len(iterates))}
   
   # Set objective
-  # objective = opt_model.sum(1/2*(x_vars[i] - stab_center[i])**2 for i in range(T))
-   
-  objective = opt_model.sum((lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + 1/2*opt_model.sum((lamb2_vars[j] - stab_center[0][j])**2  for j in range(nbVars2))
+  objective = opt_model.sum(1/2*(lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[0][j])**2  for j in range(nbVars2))
     
   opt_model.minimize(objective)
   
@@ -547,6 +533,39 @@ def find_next_iterate(stab_center, f_lev, function_bundle, subgradient_bundle, i
     lamb = [lamb1, lamb2]
     obj = opt_model.objective_value
     return [isEmptyL, lamb]
+    
+def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+
+  nbVars = len(stab_center)
+  # Create model
+  opt_model = cpx.Model(name="Sub Problem")
+  opt_model.parameters.qpmethod = 2
+  
+  # Add decision variables
+  z_vars = np.array([ opt_model.continuous_var() for t in range(nbVars) ])
+  
+  # Set constraints
+  cp_constraints = { j : opt_model.add_constraint( 
+    ct = function_bundle[j] + np.dot(z_vars - iterates[j], subgradient_bundle[j]) <= W_lev) for j in range(len(iterates))}
+  
+  # Set objective
+  objective = opt_model.sum((1/2 - stab_center[i])*z_vars[i] for i in range(nbVars))
+    
+  opt_model.minimize(objective)
+  
+  #Solve
+  opt_model.solve()
+  print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
+  
+  #We check wether or not the SP could be solved
+  if(opt_model.get_solve_status() != JobSolveStatus.OPTIMAL_SOLUTION):
+    isEmptyL = True
+    return [isEmptyL, stab_center]
+  else:
+    isEmptyL = False
+    z = np.array([opt_model.solution[z_vars[i]] for i in range(nbVars)])
+    obj = opt_model.objective_value
+    return [isEmptyL, z]
 
 def cutting_planes_model(function_bundle, subgradient_bundle, iterates, z): 
   hat_W = map(lambda w, xi, zk: w + np.dot(xi,(z-zk)), function_bundle, subgradient_bundle, iterates)
@@ -563,11 +582,11 @@ def cutting_planes_model(function_bundle, subgradient_bundle, iterates, z):
 # function_bundle (resp. subgradient_bundle) 
 # This way, function_bundle[i] = \bar W(z_i) and subgradient_bundle[i] = \bar \partial W(z_i)
 
-def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
 
   # Data
   gamma = 0.2
-  tol = 500
+  tol = 100
   f_low = -10000000
   f_lev = 1000000
 
@@ -585,7 +604,7 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
   subgradient_bundle = [[-oracle[1], -oracle[2]]]
   delta = tol + 1
   best_index = 0
-  while (delta > tol and k < 10):
+  while (delta > tol and k < 100):
 
     print("k = ", k)
     print("f_low = ", f_low)
@@ -599,7 +618,7 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
     best_index = delta_pair[0]
     f_lev = f_low + gamma*delta
   
-    next_it_pair = find_next_iterate(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None)
+    next_it_pair = find_next_lambda(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T)
     
     next_it = next_it_pair[1]
     isEmptyL = next_it_pair[0]
@@ -619,7 +638,71 @@ def bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax
     obj = delta + f_low
     print("f_lev = ", f_lev)
 
-  return [iterates[best_index], obj]
+  return [obj, iterates[best_index]]
+  
+def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP):
+  
+  # Set up parameters
+  gamma = 0.2
+  tol = 100
+  W_low = -10000000
+  W_lev = 1000000
+  
+  # initialization 
+  k = 0
+  nbVars = len(z_0)
+  iterates = [z_0]
+  
+  lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
+  lamb2_0 = np.zeros(len(z_0))
+  lamb_0 = [lamb1_0, lamb2_0]
+  
+  oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0)
+  
+  function_bundle = [oracle[0]] # sup_\lambda \theta = W(z)
+  subgradient_bundle = [oracle[1][1]] # \lambda_2
+  delta = tol + 1
+  best_index = 0
+  
+  while (delta > tol and k < 100):
+    
+    print("k bundle on W = ", k)
+    print("W_low = ", W_low)
+    print("Function evaluation = ", oracle[0]) 
+    print("Number of iterates = ", len(iterates))
+    delta_pair = compute_delta(function_bundle, W_low)
+    delta = delta_pair[1]
+    
+    print("delta = ", delta)
+    
+    best_index = delta_pair[0]
+    W_lev = W_low + gamma*delta
+  
+    next_it_pair = find_next_z(iterates[best_index], W_lev, function_bundle, subgradient_bundle, iterates, T)
+    next_it = next_it_pair[1]
+    isEmptyL = next_it_pair[0]
+
+    if (isEmptyL):
+      W_low = W_lev
+    else :
+      
+      iterates.append(next_it)
+
+      oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, iterates[-1])
+
+      function_bundle.append(oracle[0])
+      print("Function evaluation = ", oracle[0]) 
+      subgradient_bundle.append(oracle[1])
+    k = k+1
+    obj = delta + W_low
+    print("W_lev = ", W_lev)
+
+  return [obj, iterates[best_index]]
+    
+
+
+#################### Tests #################################
+  
 
 nbPbTherm = nbThermal
 nbPbHydro = 2
@@ -638,14 +721,15 @@ nominf = [nominf_1, nominf_2]
 
 
 # lamb_0 = 40*np.ones(T)
-z = np.array([1,1])
+z_0 = np.array([1,1])
 
 lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
-
-lamb2_0 = np.zeros(len(z))
-
+lamb2_0 = np.zeros(len(z_0))
 lamb_0 = [lamb1_0, lamb2_0]
 
 
+#print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
-print(bundle_method(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z))
+print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP))
+
+
