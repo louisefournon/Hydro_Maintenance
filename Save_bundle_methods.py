@@ -613,10 +613,11 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
   
   # Initialize our saved_iterations_bundle for the current z
-  saved_lambdas_bundle = [lamb_0]
-  saved_function_bundle = [oracle[0]]
-  saved_sg1_bundle = [oracle[1]]
-  saved_sg2_bundle = [oracle[2]]
+  if saved_iterations_bundle is not None:
+    saved_lambdas_bundle = [lamb_0]
+    saved_function_bundle = [oracle[0]]
+    saved_sg1_bundle = [oracle[1]]
+    saved_sg2_bundle = [oracle[2]]
   
   function_bundle = [-oracle[0]]
   subgradient_bundle = [[-oracle[1], -oracle[2]]]
@@ -654,22 +655,24 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
       subgradient_bundle.append([-oracle[1], -oracle[2]])
       
       # Update our saved_iterations_bundle
-      saved_lambdas_bundle.append(next_it)
-      saved_function_bundle.append(oracle[0])
-      saved_sg1_bundle.append(oracle[1])
-      saved_sg2_bundle.append(oracle[2])
+      if saved_iterations_bundle is not None:
+        saved_lambdas_bundle.append(next_it)
+        saved_function_bundle.append(oracle[0])
+        saved_sg1_bundle.append(oracle[1])
+        saved_sg2_bundle.append(oracle[2])
       
     k = k+1
     obj = delta + f_low
     print("f_lev = ", f_lev)
   
   # Add all collected data to our saved_iterations_bundle
-  saved_iteration = [ z, saved_lambdas_bundle, saved_function_bundle, saved_sg1_bundle, saved_sg2_bundle ]
-  saved_iterations_bundle.append(saved_iteration)
+  if saved_iterations_bundle is not None:
+    saved_iteration = [ z, saved_lambdas_bundle, saved_function_bundle, saved_sg1_bundle, saved_sg2_bundle ]
+    saved_iterations_bundle.append(saved_iteration)
 
   return [obj, iterates[best_index]]
   
-def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP):
+def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, usePreviousIterates):
   
   # Set up parameters
   gamma = 0.2
@@ -681,7 +684,10 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
   k = 0
   nbVars = len(z_0)
   iterates = [z_0]
-  saved_iterations_bundle = []
+  if(usePreviousIterates):
+    saved_iterations_bundle = []
+  else:
+    saved_iterations_bundle = None
   
   lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
   lamb2_0 = np.zeros(len(z_0))
@@ -759,6 +765,6 @@ lamb_0 = [lamb1_0, lamb2_0]
 
 #print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
-print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP))
+print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False))
 
 
