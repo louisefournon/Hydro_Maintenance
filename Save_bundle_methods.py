@@ -427,7 +427,6 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     xi = None
     if z is not None:
       xi = np.array([opt_model.solution[xi_vars[i]] for i in range(len(z))])
-      print("xi = ", xi)
     aPower = np.zeros(T)
     for i in range(T):
         for j in range(nbTurbine):
@@ -450,24 +449,23 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
       # print(oracle)
       theta += oracle[0] # Objective
       sg1 -= oracle[1]*dt # Active power (size T)
-      print("obj therm ", i, " = ", oracle[0])
+      # print("obj therm ", i, " = ", oracle[0])
   
   if(nbPbHydro > 0):
     for i in range(nbPbHydro):
-      print("len(z)/nMaintenance ", len(z)/nMaintenance )
-      print(i)
+
       if(i < len(z)/nMaintenance) : # I.e. if nb turbines we do maintenance on > nb current turbine
-        print("OUI")
+
         oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], i, z)
       else:
         oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i])
       theta += oracle[0] # Objective
       sg1 -= oracle[1]*dt # Active power (size T)
       if(oracle[2] is not None):
-        print("YES")
+
         theta += np.dot(lamb[1], z - oracle[2])
         sg2 += z - oracle[2]
-      print("obj hydro ", i, " = ", oracle[0])
+  
       # print("oracle[0] = ", oracle[0])
       # print("Power = ", oracle[1])
   print("theta = ", theta)
@@ -497,8 +495,9 @@ def compute_delta(function_bundle, f_low):
 # Let nbRows be the number of rows of the \tilde A matrix (i.e. also the number of components of \tilde b)
 
 
-def find_next_lambda(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def find_next_lambda(stab_center, f_lev, function_bundle, subgradient_bundle, iterates, T, z, saved_iterations_bundle = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
   
+  # Saved_iterations_bundle of the form [ z, lambdas_bundle, function_bundle, sg1_bundle, sg2_bundle ] (for one z, we have several iterations)
 
   nbVars1 = len(stab_center[0])
   nbVars2 = len(stab_center[1])
@@ -510,9 +509,22 @@ def find_next_lambda(stab_center, f_lev, function_bundle, subgradient_bundle, it
   lamb1_vars = np.array([ opt_model.continuous_var() for t in range(nbVars1) ])
   lamb2_vars = np.array([ opt_model.continuous_var() for j in range(nbVars2) ])
   
-  # Set constraints
+  # Set current cp constraints
   cp_constraints = { j : opt_model.add_constraint( 
     ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1], subgradient_bundle[j][1]) <= f_lev) for j in range(len(iterates))}
+    
+  # Set previous iteration cp constraints
+  if(saved_iterations_bundle is not None):
+    for i in range(len(saved_iterations_bundle)):
+      # Get the data for that z'
+      z_prime = saved_iterations_bundle[i][0] 
+      saved_lambas_bundle = saved_iterations_bundle[i][1]
+      saved_function_bundle = saved_iterations_bundle[i][2]
+      saved_sg1_bundle = saved_iterations_bundle[i][3]
+      saved_sg2_bundle = saved_iterations_bundle[i][4]
+      # Add cp constaints for every iteration associated to that z'
+      cp_bundle_constraints = { j : opt_model.add_constraint(
+        ct = saved_function_bundle[j] + np.dot(saved_lambas_bundle[j][1], z - z_prime) + np.dot(saved_sg1_bundle[j], lamb1_vars - saved_lambas_bundle[j][0]) + np.dot(saved_sg2_bundle[j], lamb2_vars - saved_lambas_bundle[j][1]) <= f_lev) for j in range(len(lambas_bundle)) }
   
   # Set objective
   objective = opt_model.sum(1/2*(lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[0][j])**2  for j in range(nbVars2))
@@ -521,7 +533,7 @@ def find_next_lambda(stab_center, f_lev, function_bundle, subgradient_bundle, it
   
   #Solve
   opt_model.solve()
-  print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
+  # print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
   #We check wether or not the SP could be solved
   if(opt_model.get_solve_status() != JobSolveStatus.OPTIMAL_SOLUTION):
     isEmptyL = True
@@ -555,7 +567,7 @@ def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterate
   
   #Solve
   opt_model.solve()
-  print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
+  #print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
   
   #We check wether or not the SP could be solved
   if(opt_model.get_solve_status() != JobSolveStatus.OPTIMAL_SOLUTION):
@@ -582,7 +594,7 @@ def cutting_planes_model(function_bundle, subgradient_bundle, iterates, z):
 # function_bundle (resp. subgradient_bundle) 
 # This way, function_bundle[i] = \bar W(z_i) and subgradient_bundle[i] = \bar \partial W(z_i)
 
-def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z = None, saved_iterations_bundle = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
 
   # Data
   gamma = 0.2
@@ -600,25 +612,31 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   
   oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
   
+  # Initialize our saved_iterations_bundle for the current z
+  saved_lambdas_bundle = [lamb_0]
+  saved_function_bundle = [oracle[0]]
+  saved_sg1_bundle = [oracle[1]]
+  saved_sg2_bundle = [oracle[2]]
+  
   function_bundle = [-oracle[0]]
   subgradient_bundle = [[-oracle[1], -oracle[2]]]
   delta = tol + 1
   best_index = 0
+  
   while (delta > tol and k < 100):
 
     print("k = ", k)
-    print("f_low = ", f_low)
-    print("Function evaluation = ", oracle[0]) 
-    print("Number of iterates = ", len(iterates))
+    # print("f_low = ", f_low)
+    # print("Function evaluation = ", oracle[0]) 
+    # print("Number of iterates = ", len(iterates))
     delta_pair = compute_delta(function_bundle, f_low)
     delta = delta_pair[1]
     
-    print("delta = ", delta)
+    print("delta best index = ", delta)
     
     best_index = delta_pair[0]
     f_lev = f_low + gamma*delta
-  
-    next_it_pair = find_next_lambda(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T)
+    next_it_pair = find_next_lambda(iterates[best_index], f_lev, function_bundle, subgradient_bundle, iterates, T, z, saved_iterations_bundle)
     
     next_it = next_it_pair[1]
     isEmptyL = next_it_pair[0]
@@ -634,9 +652,20 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
       function_bundle.append(-oracle[0])
       print("Function evaluation = ", oracle[0]) 
       subgradient_bundle.append([-oracle[1], -oracle[2]])
+      
+      # Update our saved_iterations_bundle
+      saved_lambdas_bundle.append(next_it)
+      saved_function_bundle.append(oracle[0])
+      saved_sg1_bundle.append(oracle[1])
+      saved_sg2_bundle.append(oracle[2])
+      
     k = k+1
     obj = delta + f_low
     print("f_lev = ", f_lev)
+  
+  # Add all collected data to our saved_iterations_bundle
+  saved_iteration = [ z, saved_lambdas_bundle, saved_function_bundle, saved_sg1_bundle, saved_sg2_bundle ]
+  saved_iterations_bundle.append(saved_iteration)
 
   return [obj, iterates[best_index]]
   
@@ -652,12 +681,13 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
   k = 0
   nbVars = len(z_0)
   iterates = [z_0]
+  saved_iterations_bundle = []
   
   lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
   lamb2_0 = np.zeros(len(z_0))
   lamb_0 = [lamb1_0, lamb2_0]
   
-  oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0)
+  oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0, saved_iterations_bundle)
   
   function_bundle = [oracle[0]] # sup_\lambda \theta = W(z)
   subgradient_bundle = [oracle[1][1]] # \lambda_2
@@ -673,7 +703,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
     delta_pair = compute_delta(function_bundle, W_low)
     delta = delta_pair[1]
     
-    print("delta = ", delta)
+    print("delta W = ", delta)
     
     best_index = delta_pair[0]
     W_lev = W_low + gamma*delta
@@ -685,17 +715,16 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
     if (isEmptyL):
       W_low = W_lev
     else :
-      
       iterates.append(next_it)
 
-      oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, iterates[-1])
+      oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, iterates[-1], saved_iterations_bundle)
 
       function_bundle.append(oracle[0])
-      print("Function evaluation = ", oracle[0]) 
+      #print("Function evaluation = ", oracle[0]) 
       subgradient_bundle.append(oracle[1])
     k = k+1
     obj = delta + W_low
-    print("W_lev = ", W_lev)
+    # print("W_lev = ", W_lev)
 
   return [obj, iterates[best_index]]
     
