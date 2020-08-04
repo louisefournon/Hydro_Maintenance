@@ -184,7 +184,7 @@ def oracleTherm(lamb, iCentrale, therm_grad, therm_cost, pow_max, initP, T, dt):
 
 #  Fourth problem : hydro units  
 
-nMaintenance = 2
+nMaintenance = 2 # Number of maintenance periods we operate over the horizon
 
 # Valley de l'Ain
 
@@ -546,6 +546,8 @@ def find_next_lambda(stab_center, f_lev, function_bundle, subgradient_bundle, it
     obj = opt_model.objective_value
     return [isEmptyL, lamb]
     
+    
+    
 def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterates, T, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
 
   nbVars = len(stab_center)
@@ -556,9 +558,15 @@ def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterate
   # Add decision variables
   z_vars = np.array([ opt_model.continuous_var() for t in range(nbVars) ])
   
-  # Set constraints
+  # Set cp constraints
   cp_constraints = { j : opt_model.add_constraint( 
     ct = function_bundle[j] + np.dot(z_vars - iterates[j], subgradient_bundle[j]) <= W_lev) for j in range(len(iterates))}
+    
+  nTurbMaint = int(len(stab_center)/nMaintenance) # number of turbines over which we operate maintenance
+  
+  # Set minimum maintenance constraint
+  minMaint_constraints = { j : opt_model.add_constraint(
+    ct = opt_model.sum(z_vars[ i*nTurbMaint + j ] for i in range(nMaintenance)) <= nMaintenance - 1) for j in range(nTurbMaint) }
   
   # Set objective
   objective = opt_model.sum((1/2 - stab_center[i])*z_vars[i] for i in range(nbVars))
@@ -756,15 +764,16 @@ nominf = [nominf_1, nominf_2]
 
 
 # lamb_0 = 40*np.ones(T)
-z_0 = np.array([1,1])
+z_0 = np.array([0,0])
+lamb1_0 = np.zeros(T)
 
-lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
+#lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
 lamb2_0 = np.zeros(len(z_0))
 lamb_0 = [lamb1_0, lamb2_0]
 
 
 #print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
-print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False))
+print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, True))
 
 
