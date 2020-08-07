@@ -274,8 +274,8 @@ def upper_bound(T, nbTurbine, nRes, sigma_T, mxFlow, mxPow, wvals, Vmax, Vmin):
   x_u = np.zeros(nbVars)
   turBnd = efficiency(nRes, sigma_T, mxFlow, mxPow, wvals, nbTurbine)[1]
   for i in range(T):
-      for j in range(nbTurbine):
-        x_u[i*nbTurbine + j] = turBnd[j]*3600.0 # m3/h
+    for j in range(nbTurbine):
+      x_u[i*nbTurbine + j] = turBnd[j]*3600.0 # m3/h
 
   for i in range(nRes):
     x_u[ T*nbTurbine + i ] = Vmax[i] - Vmin[i]
@@ -329,7 +329,7 @@ def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, in
     for i in range(T):
       # Remove turbined quantities at this time step			
       for j in range(iOff, iOff + nbTur):
-          a_[ i*nbTurbine + j ] = -1.0*dt
+        a_[ i*nbTurbine + j ] = -1.0*dt
           
       #  dd Amont Turbined stuff
       # Flow delay should be added here in a more sophisticated model
@@ -340,7 +340,7 @@ def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, in
       if xi_vars is not None and iValley == 0:
         
         # Set the maintenance constraints
-        
+        print("Oups")
         nbMainTurb = int(len(xi_vars)/nMaintenance)
         for i in range(nbMainTurb):
           for k in range(nMaintenance):
@@ -356,18 +356,20 @@ def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, in
                   
       # flowMatrix * x >= VminB
       # VminB = Vmin - V0 - cumulated inflows
-      VminB = Vmin[jRes] - V0[jRes] - inflow_nom[jRes]*3600.0*dt*(i+1)
+      VminB = -(-Vmin[jRes] + V0[jRes] + inflow_nom[jRes]*3600.0*dt*(i+1))
       minFlow_ct = opt_model.add_constraint( 
         ct=opt_model.sum(a_[i] * x_vars[i] for i in range(nbVars)) >= VminB) 
 
     # Before moving to the next reservoir we add the water value constraints
     # Add constraints related to zF
     # At this stage a_ contains the last line of the flow equations
+    
+    
     a_[T*nbTurbine + nRes + jRes] = -1.0
     bz = Vmin[jRes] - V0[jRes] - inflow_nom[jRes]*3600.0*dt*T
 
     flow_ct1 = opt_model.add_constraint(
-      ct=opt_model.sum(a_[i] * x_vars[i] for i in range(nbVars)) == bz) 
+      ct=opt_model.sum(a_[i] * x_vars[i] for i in range(nbVars)) == bz ) 
     
     # Add z0 related constraint
     bz = V0[jRes] - Vmin[jRes]
@@ -428,6 +430,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1)) - opt_model.sum(lamb[1][i]*xi_vars[i] for i in range(len(z)))
     
   else:
+    print("Set up obj correctly")
     # Set objective without z
     objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1))
     
@@ -438,7 +441,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   opt_model.solve()
   
   # We check wether or not the SP could be solved
-  opt_model.export_as_lp(path="C:/Users/Louise Fournon/Documents/ENPC/MPRO/Stages/StageEdimbourg", basename=None, hide_user_names=False)
+  opt_model.export_as_lp(path="C:/Users/Louise Fournon/Documents/ENPC/MPRO/Stages/StageEdimbourg", basename="YOOOOO", hide_user_names=False)
   
   if(opt_model.get_solve_status() == JobSolveStatus.OPTIMAL_SOLUTION):
     val = np.array([opt_model.solution[x_vars[i]] for i in range(nbVars1)])
@@ -446,10 +449,11 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     if z is not None and iValley == 0:
       xi = np.array([opt_model.solution[xi_vars[i]] for i in range(len(z))])
     aPower = np.zeros(T)
-    for i in range(T):
-        for j in range(nbTurbine):
-          aPower[i] += rhoEff[j]*val[i*nbTurbine + j]
+    for t in range(T):
+      for j in range(nbTurbine):
+        aPower[t] += rhoEff[j]*val[t*nbTurbine + j]
     obj = opt_model.objective_value
+    print("aPower = ", aPower)
     return [obj, aPower, xi]
 
 
@@ -466,36 +470,25 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
     
   if(nbPbTherm > 0):
     for i in range(nbPbTherm):
-      oracle = oracleTherm(lamb, i, therm_grad, therm_cost, pow_max, initP, T, dt)
+      oracle = oracleTherm(lamb, i, therm_grad, therm_cost, pow_max, initP, T, dt, z)
       # print(oracle)
       theta += oracle[0] # Objective
       sg1 -= oracle[1]*dt # Active power (size T)
       print("obj therm ", i, " = ", oracle[0])
   
   if(nbPbHydro > 0):
+    
     for i in range(nbPbHydro):
-       # if z is not None:
+        # Oracle acts differently wether z is None or not
         oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], i, z)
-         
-        # #if(i < len(z)/nMaintenance) : # I.e. if nb turbines we do maintenance on > nb current turbine
-        #   oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], i, z)
-        # else:
-        #   oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i])
-        
+
         theta += oracle[0] # Objective
         sg1 -= oracle[1]*dt # Active power (size T)
         
         if(oracle[2] is not None):
-  
           theta += np.dot(lamb[1], z - oracle[2])
           sg2 += z - oracle[2]
         print("Obj hydro ", i, " = ", oracle[0])   
-      # else:
-      #   oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], z)
-      #   theta += oracle[0] # Objective
-      #   sg1 -= oracle[1]*dt # Active power (size T)
-      # print("oracle[0] = ", oracle[0])
-      # print("Power = ", oracle[1])
       
   print("theta = ", theta)
   
@@ -503,7 +496,6 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
     theta += np.dot(demand, lamb[0])
   else:
     theta += np.dot(demand, lamb)
-    
   sg1 += demand*dt
   
   if z is not None:
