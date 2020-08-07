@@ -132,7 +132,7 @@ for i in range(nbThermal):
 
 # x is the production level, lamb the dual variable and i the index of the unit
 
-def oracleTherm(lamb, iCentrale, therm_grad, therm_cost, pow_max, initP, T, dt):
+def oracleTherm(lamb, iCentrale, therm_grad, therm_cost, pow_max, initP, T, dt, z = None):
   
   # Define parameters
   A_therm = np.eye(T)
@@ -165,7 +165,11 @@ def oracleTherm(lamb, iCentrale, therm_grad, therm_cost, pow_max, initP, T, dt):
     ct=opt_model.sum(A_therm[i][j] * x_vars[j] for j in range(T)) >= b_inf[i]) for i in range(T)}
   
   # Set objective
-  cost = therm_cost[iCentrale]*np.ones(T) - lamb[0]
+  if z is not None:
+    cost = therm_cost[iCentrale]*np.ones(T) - lamb[0]
+  else:
+    cost = therm_cost[iCentrale]*np.ones(T) - lamb
+    
   objective = opt_model.sum(cost[i]*x_vars[i]*dt for i in range(T))
     
   opt_model.minimize(objective)
@@ -174,7 +178,6 @@ def oracleTherm(lamb, iCentrale, therm_grad, therm_cost, pow_max, initP, T, dt):
   opt_model.solve()
   
   # We check wether or not the SP could be solved
-  # opt_model.export_as_lp(path="C:/Users/Louise Fournon/Documents/ENPC/MPRO/Stages/StageEdimbourg", basename=None, hide_user_names=False)
   
   if(opt_model.get_solve_status() == JobSolveStatus.OPTIMAL_SOLUTION):
     aPower = np.array([opt_model.solution[x_vars[i]] for i in range(T)])
@@ -467,7 +470,7 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
       # print(oracle)
       theta += oracle[0] # Objective
       sg1 -= oracle[1]*dt # Active power (size T)
-      # print("obj therm ", i, " = ", oracle[0])
+      print("obj therm ", i, " = ", oracle[0])
   
   if(nbPbHydro > 0):
     for i in range(nbPbHydro):
@@ -486,7 +489,7 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
   
           theta += np.dot(lamb[1], z - oracle[2])
           sg2 += z - oracle[2]
-          
+        print("Obj hydro ", i, " = ", oracle[0])   
       # else:
       #   oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], z)
       #   theta += oracle[0] # Objective
@@ -548,6 +551,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
   if z is not None:
     lamb1_vars = np.array([ opt_model.continuous_var() for t in range(nbVars1) ])
     lamb2_vars = np.array([ opt_model.continuous_var() for j in range(nbVars2) ])
+    
   else:
     lamb_vars = np.array([ opt_model.continuous_var() for t in range(nbVars) ])
   
@@ -558,7 +562,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
       
   else:
     cp_constraints = { j : opt_model.add_constraint( 
-      ct = function_bundle[j] + np.dot(lamb_vars - iterates[j], subgradient_bundle[j]) <= theta_lev) for j in range(len(iterates))}
+      ct = function_bundle[j] + opt_model.sum((lamb_vars[t] - iterates[j][t])*subgradient_bundle[j][t] for t in range(T)) <= theta_lev) for j in range(len(iterates))}
     
   # Set previous iteration cp constraints
   if(saved_iterations_bundle is not None):
@@ -584,7 +588,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
   #Solve
   opt_model.solve()
   # print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
-  #We check wether or not the SP could be solved
+  # We check wether or not the SP could be solved
   if(opt_model.get_solve_status() != JobSolveStatus.OPTIMAL_SOLUTION):
     isEmptyL = True
     return [isEmptyL, stab_center]
@@ -659,8 +663,8 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   # Data
   gamma = 0.2
   tol = 500
-  theta_low = -1000000000
-  theta_lev = 100000000
+  theta_low = -10000000
+  theta_lev = 1000000
 
   # initialization 
   k = 0
@@ -675,7 +679,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     iterates = [lamb_0]
   
   oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
-  
+  sys.exit()
   # Initialize our saved_iterations_bundle for the current z
   if saved_iterations_bundle is not None:
     saved_lambdas_bundle = [lamb_0]
@@ -695,11 +699,12 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     
   delta = tol + 1
   best_index = 0
-  
+
   while (delta > tol and k < 100):
 
     print("k bundle method = ", k)
     print("theta_low = ", theta_low)
+    
     # print("Function bundle = ", function_bundle) 
     print("Number of iterates = ", len(iterates))
     
@@ -841,12 +846,13 @@ MaintValleys = [0] # Here only on the first one
 z_0 = np.array([1,1])
 #lamb1_0 = np.zeros(T)
 
-lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514, 58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556, 34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
+
+lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514,58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556,34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
 lamb2_0 = np.zeros(len(z_0))
 lamb_0 = [lamb1_0, lamb2_0]
 
 
-print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
+print(bundle_method_theta(dt, T, lamb1_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP))
 
 #print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False))
 
