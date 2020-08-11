@@ -187,7 +187,7 @@ def oracleTherm(lamb, iCentrale, therm_grad, therm_cost, pow_max, initP, T, dt, 
 
 #  Fourth problem : hydro units  
 
-nMaintenance = 2 # Number of maintenance periods we operate over the horizon
+nMaintPeriods = 2 # Number of maintenance periods we operate over the horizon
 
 # Valley de l'Ain
 
@@ -338,11 +338,19 @@ def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, in
           a_[i*nbTurbine + k ] = 1.0*dt
         
       if xi_vars is not None and iValley == 0:
+        # xi is of dimension nTurbMaint x nMaintPeriods (i.e. nb turbines we maintain x nb of maintenance periods)
+        
         # Set the maintenance constraints
-        nbMainTurb = int(len(xi_vars)/nMaintenance)
-        for i in range(nbMainTurb):
-          for k in range(nMaintenance):
-            maint_ct = { t : opt_model.add_constraint(x_vars[i*T + t] <= x_u[T*i + t]*xi_vars[nMaintenance*i + k]) for t in range(int(k*T/nMaintenance), int((k+1)*T/nMaintenance)) }
+        # Number of turbines on which we will execute maintenance
+        nTurbMaint = int(len(xi_vars)/nMaintPeriods)
+        # nMaintPeriods is the number of maintenance periods we have over the horizon
+        # The duration of one maintenance period is T/nMaintPeriods
+        lengthMaint = int(T/nMaintPeriods)
+        
+        for i in range(nTurbMaint): 
+          for k in range(nMaintPeriods): # k is the number of the maintenance period
+            for t in range(int(k*lengthMaint), int((k+1)*lengthMaint)):
+              opt_model.add_constraint(x_vars[i*T + t] <= x_u[T*i + t]*xi_vars[i*nMaintPeriods + k]) 
       
     
       # Add the Constraint
@@ -384,7 +392,7 @@ def set_hydro_constraints(opt_model, x_vars, x_u, nRes, nbVars, nbTurbine, T, in
 
 
 # Returns decision variable (production and volume) for a given hydro valley (here we have 2 of them)
-def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, iValley, z = None): 
+def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, iValley, z = None, xi_test = None): 
 
   # iValley is the index of the current valley we're optimizing
   nbVars1 = T*nbTurbine + 2*nRes
@@ -417,10 +425,13 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   x_vars = { i : opt_model.continuous_var(ub = x_u[i]) for i in range(nbVars1) }
   xi_vars = None
   
-  if not z is None and iValley == 0: # z should have nb Maintenance periods rows and nbTurbine columns 
+  if not z is None and iValley == 0 and xi_test is None: # z should have nb Maintenance periods rows and nbTurbine columns 
     xi_vars = { i : opt_model.binary_var() for i in range(len(z)) } # xi and z must have the same dimension
   
   # Set constraints 
+  if xi_test is not None and iValley == 0:
+    xi_vars = xi_test
+    
   set_hydro_constraints(opt_model, x_vars,  x_u, nRes, nbVars1, nbTurbine, T, nominf, V0, Vmin, Vmax, dt, sigT, A_connect, iValley, xi_vars)
     
   if z is not None and iValley == 0:
@@ -428,7 +439,6 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1)) - opt_model.sum(lamb[1][i]*xi_vars[i] for i in range(len(z)))
     
   else:
-    print("Set up obj correctly")
     # Set objective without z
     objective = opt_model.sum(x_vars[i] * c[i] for i in range(nbVars1))
     
@@ -444,21 +454,22 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   if(opt_model.get_solve_status() == JobSolveStatus.OPTIMAL_SOLUTION):
     val = np.array([opt_model.solution[x_vars[i]] for i in range(nbVars1)])
     xi = None
-    if z is not None and iValley == 0:
+    if z is not None and iValley == 0 and xi_test is None:
       xi = np.array([opt_model.solution[xi_vars[i]] for i in range(len(z))])
     aPower = np.zeros(T)
+    #print("val = ", val)
     for t in range(T):
       for j in range(nbTurbine):
         aPower[t] += rhoEff[j]*val[t*nbTurbine + j]
     obj = opt_model.objective_value
     #print("aPower = ", aPower)
     #print("xi = ", xi)
-    return [obj, aPower, xi]
+    return [obj, aPower, xi_test]
 
 
 # Lambda1 in argument has dimension T*(nbPbThermal + nbPbHydro)
 
-def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, Vmin = None, Vmax = None, nRes = None, nbTurbine = None, mxFlow = None, mxPow = None, sigT = None, wvals = None, nominf = None, therm_grad = None, therm_cost = None, pow_max = None, initP = None, z = None):
+def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, Vmin = None, Vmax = None, nRes = None, nbTurbine = None, mxFlow = None, mxPow = None, sigT = None, wvals = None, nominf = None, therm_grad = None, therm_cost = None, pow_max = None, initP = None, z = None, xi_test = None):
   
   # pow_max is for hydro and mxPow for hydro
   theta = 0
@@ -467,29 +478,25 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
   if z is not None:
     sg2 = np.zeros(len(z))
     
-  if(nbPbTherm > 0):
-    for i in range(nbPbTherm):
-      oracle = oracleTherm(lamb, i, therm_grad, therm_cost, pow_max, initP, T, dt, z)
-      # print(oracle)
-      theta += oracle[0] # Objective
-      sg1 -= oracle[1]*dt # Active power (size T)
-      #print("obj therm ", i, " = ", oracle[0])
-  
-  if(nbPbHydro > 0):
+  for i in range(nbPbTherm):
+    oracle = oracleTherm(lamb, i, therm_grad, therm_cost, pow_max, initP, T, dt, z)
+    # print(oracle)
+    theta += oracle[0] # Objective
+    sg1 -= oracle[1]*dt # Active power (size T)
+    #print("obj therm ", i, " = ", oracle[0])
     
-    for i in range(nbPbHydro):
-        # Oracle acts differently wether z is None or not
-        oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], i, z)
+  for i in range(nbPbHydro):
+    # Oracle acts differently wether z is None or not
+    oracle = oracleHydro(A_connect[i], lamb, T, dt, V0[i], Vmin[i], Vmax[i], nRes[i], nbTurbine[i], mxFlow[i], mxPow[i], sigT[i], wvals[i], nominf[i], i, z, xi_test)
 
-        theta += oracle[0] # Objective
-        sg1 -= oracle[1]*dt # Active power (size T)
-        
-        if(oracle[2] is not None):
-          theta += np.dot(lamb[1], z - oracle[2])
-          sg2 += z - oracle[2]
-        #print("Obj hydro ", i, " = ", oracle[0])   
-      
-  print("theta = ", theta)
+    theta += oracle[0] # Objective
+    sg1 -= oracle[1]*dt # Active power (size T)
+    
+    if(oracle[2] is not None):
+      theta += np.dot(lamb[1], z - oracle[2])
+      sg2 += z - oracle[2]
+    #print("Obj hydro ", i, " = ", oracle[0])   
+
   
   if z is not None:
     theta += np.dot(dt*demand, lamb[0])
@@ -498,6 +505,7 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
   sg1 += demand*dt
   
   if z is not None:
+    #print("sg2 = ", sg2)
     return [theta, sg1, sg2]
   else:
     return [theta, sg1]
@@ -523,12 +531,16 @@ def compute_delta(function_bundle, theta_low):
 # Let nbRows be the number of rows of the \tilde A matrix (i.e. also the number of components of \tilde b)
 
 
-def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle, iterates, T, z = None, saved_iterations_bundle = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle, iterates, T, z = None, xi_test = None, saved_iterations_bundle = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
   
   # Saved_iterations_bundle of the form [ z, lambdas_bundle, function_bundle, sg1_bundle, sg2_bundle ] (for one z, we have several iterations)
 
-  if z is not None: # We have lambda1 and lambda2
+  if z is not None and xi_test is None: # We have lambda1 and lambda2
     nbVars1 = len(stab_center[0])
+    nbVars2 = len(stab_center[1])
+    
+  if z is not None and xi_test is not None: # We have lambda1 on which we optimize and lambda2 that doesn't change
+    nbVars = len(stab_center[0])
     nbVars2 = len(stab_center[1])
     
   else: # We only have one dual value
@@ -539,21 +551,30 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
   opt_model.parameters.qpmethod = 2
   
   # Add decision variables
-  if z is not None:
+  if z is not None and xi_test is None:
     lamb1_vars = np.array([ opt_model.continuous_var() for t in range(nbVars1) ])
-    lamb2_vars = np.array([ opt_model.continuous_var(lb = np.NINF) for j in range(nbVars2) ])
-    
+    lamb2_vars = np.array([ opt_model.continuous_var(lb = -10000000000000) for j in range(nbVars2) ])
+
   else:
     lamb_vars = np.array([ opt_model.continuous_var() for t in range(nbVars) ])
   
   # Set current cp constraints
-  if z is not None:
+  if z is not None and xi_test is not None:
+    cp_constraints = { j : opt_model.add_constraint( 
+      ct = function_bundle[j] + np.dot(lamb_vars - iterates[j][0], subgradient_bundle[j][0]) <= theta_lev) for j in range(len(iterates))}
+  
+  elif z is not None and xi_test is None:
     cp_constraints = { j : opt_model.add_constraint( 
       ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1], subgradient_bundle[j][1]) <= theta_lev) for j in range(len(iterates))}
       
   else:
+    # print("z = ", z)
+    # print("xi_test = ", xi_test)
+    # print("len lamb_vars = ", len(lamb_vars))
+    # print("len iterates[0][0] = ", len(iterates[0][0]))
+    # print("len subgradient_bundle[j][0] = ", len(subgradient_bundle[0][0]))
     cp_constraints = { j : opt_model.add_constraint( 
-      ct = function_bundle[j] + opt_model.sum((lamb_vars[t] - iterates[j][t])*subgradient_bundle[j][t] for t in range(T)) <= theta_lev) for j in range(len(iterates))}
+      ct = function_bundle[j] + np.dot(lamb_vars - iterates[j], subgradient_bundle[j]) <= theta_lev) for j in range(len(iterates))}
     
   # Set previous iteration cp constraints
   if(saved_iterations_bundle is not None):
@@ -569,8 +590,12 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
         ct = saved_function_bundle[j] + np.dot(saved_lambas_bundle[j][1], z - z_prime) + np.dot(saved_sg1_bundle[j], lamb1_vars - saved_lambas_bundle[j][0]) + np.dot(saved_sg2_bundle[j], lamb2_vars - saved_lambas_bundle[j][1]) <= theta_lev) for j in range(len(lambas_bundle)) }
   
   # Set objective
-  if z is not None:
-    objective = opt_model.sum(1/2*(lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[1][j])**2  for j in range(nbVars2))
+  if z is not None and xi_test is None:
+    objective = opt_model.sum(1/2*(lamb_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[1][j])**2  for j in range(nbVars2))
+    
+  elif z is not None and xi_test is not None:
+    objective = opt_model.sum(1/2*(lamb_vars[i] - stab_center[0][i])**2 for i in range(nbVars))
+    
   else:
     objective = opt_model.sum(1/2*(lamb_vars[i] - stab_center[i])**2 for i in range(nbVars))
     
@@ -585,14 +610,20 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
     return [isEmptyL, stab_center]
   else:
     isEmptyL = False
-    if z is not None:
+    if z is not None and xi_test is None:
       lamb1 = np.array([opt_model.solution[lamb1_vars[i]] for i in range(nbVars1)])
       lamb2 = np.array([opt_model.solution[lamb2_vars[i]] for i in range(nbVars2)])
       lamb = [lamb1, lamb2]
       print("lambda2 = ", lamb2)
+    if z is not None and xi_test is not None:
+      lamb1 = np.array([opt_model.solution[lamb_vars[i]] for i in range(nbVars)])
+      lamb2 = stab_center[1]
+      lamb = [lamb1, lamb2]
     else:
       lamb = np.array([opt_model.solution[lamb_vars[i]] for i in range(nbVars)])
     obj = opt_model.objective_value
+    print("obj next lambda = ", obj)
+    print("next lambda = ", lamb1)
     return [isEmptyL, lamb]
     
     
@@ -610,11 +641,11 @@ def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterate
   cp_constraints = { j : opt_model.add_constraint( 
     ct = function_bundle[j] + np.dot(z_vars - iterates[j], subgradient_bundle[j]) <= W_lev) for j in range(len(iterates))}
     
-  nTurbMaint = int(len(stab_center)/nMaintenance) # number of turbines over which we operate maintenance
+  nTurbMaint = int(len(stab_center)/nMaintPeriods) # number of turbines over which we operate maintenance
   
   # Set minimum maintenance constraint
   minMaint_constraints = { j : opt_model.add_constraint(
-    ct = opt_model.sum(z_vars[ i*nTurbMaint + j ] for i in range(nMaintenance)) <= nMaintenance - 1) for j in range(nTurbMaint) }
+    ct = opt_model.sum(z_vars[ i*nTurbMaint + j ] for i in range(nMaintPeriods)) <= nMaintPeriods - 1) for j in range(nTurbMaint) }
   
   # Set objective
   objective = opt_model.sum((1/2 - stab_center[i])*z_vars[i] for i in range(nbVars))
@@ -650,7 +681,7 @@ def cutting_planes_model(function_bundle, subgradient_bundle, iterates, z):
 # function_bundle (resp. subgradient_bundle) 
 # This way, function_bundle[i] = \bar W(z_i) and subgradient_bundle[i] = \bar \partial W(z_i)
 
-def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z = None, saved_iterations_bundle = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
+def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z = None, xi_test = None, saved_iterations_bundle = None, ub = None, lb = None, A_tilde = None, b_1 = None, b_2 = None):
 
   # Data
   gamma = 0.2
@@ -670,7 +701,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     # Put initial lambda in iterates bundle
     iterates = [lamb_0]
   
-  oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
+  oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z, xi_test)
 
   # Initialize our saved_iterations_bundle for the current z
   if saved_iterations_bundle is not None:
@@ -695,7 +726,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   while (delta > tol and k < 100):
 
     print("k = ", k)
-    print("theta_low = ", theta_low)
+    #print("theta_low = ", theta_low)
     
     # print("Function bundle = ", function_bundle) 
     #print("Number of iterates = ", len(iterates))
@@ -708,12 +739,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     best_index = delta_pair[0]
     theta_lev = theta_low + gamma*delta
     
-    next_it_pair = find_next_lambda(iterates[best_index], theta_lev, function_bundle, subgradient_bundle, iterates, T, z, saved_iterations_bundle)
-    
-    # if z is not None:
-    #   next_it_pair = find_next_lambda(iterates[best_index], theta_lev, function_bundle, subgradient_bundle, iterates, T, z, saved_iterations_bundle)
-    # else:
-    #   next_it_pair = find_next_lambda(iterates[best_index], theta_lev, function_bundle, subgradient_bundle, iterates, T)
+    next_it_pair = find_next_lambda(iterates[best_index], theta_lev, function_bundle, subgradient_bundle, iterates, T, z, xi_test, saved_iterations_bundle)
        
     next_it = next_it_pair[1]
     isEmptyL = next_it_pair[0]
@@ -722,10 +748,10 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
       theta_low = theta_lev
     else :
       iterates.append(next_it)
-      oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, iterates[-1], A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z)
+      oracle = lagrangian(nbPbTherm, nbPbHydro, T, dt, iterates[-1], A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z, xi_test)
         
       function_bundle.append(-oracle[0])
-      print("Function evaluation = ", oracle[0]) 
+      #print("Function evaluation = ", oracle[0]) 
       
       if z is not None:
         subgradient_bundle.append([-oracle[1], -oracle[2]])
@@ -839,7 +865,7 @@ nominf = [nominf_1, nominf_2]
 MaintValleys = [0] # Here only on the first one
 
 # lamb_0 = 40*np.ones(T)
-z_0 = np.array([1,1])
+z_0 = np.array([1,0])
 #lamb1_0 = np.zeros(T)
 
 
@@ -851,12 +877,14 @@ lamb_0 = [lamb1_0, lamb2_0]
 
 #print(len(top))
 
-#print(lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb1_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP))
+#print(lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
 
 #print(bundle_method_theta(dt, T, lamb1_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP))
 
-print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
+#print(oracleHydro(A_connect[0], lamb_0, T, dt, V0[0], Vmin[0], Vmax[0], nRes[0], nbTurbine[0], mxFlow[0], mxPow[0], sigT[0], wvals[0], nominf[0], 0, z_0, [1,0]))
+
+print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0, [1,1]))
 
 
 #print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False))
