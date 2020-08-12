@@ -425,7 +425,7 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   x_vars = { i : opt_model.continuous_var(ub = x_u[i]) for i in range(nbVars1) }
   xi_vars = None
   
-  if not z is None and iValley == 0 and xi_test is None: # z should have nb Maintenance periods rows and nbTurbine columns 
+  if not z is None and iValley == 0 and xi_test is None: # z of dimension nbTurbMaint x nMaintPeriods
     xi_vars = { i : opt_model.binary_var() for i in range(len(z)) } # xi and z must have the same dimension
   
   # Set constraints 
@@ -454,16 +454,17 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
   if(opt_model.get_solve_status() == JobSolveStatus.OPTIMAL_SOLUTION):
     val = np.array([opt_model.solution[x_vars[i]] for i in range(nbVars1)])
     xi = None
+    #print("xVars HYDRO valley", iValley, " = ", val)
     if z is not None and iValley == 0 and xi_test is None:
       xi = np.array([opt_model.solution[xi_vars[i]] for i in range(len(z))])
     aPower = np.zeros(T)
     #print("val = ", val)
     for t in range(T):
       for j in range(nbTurbine):
-        aPower[t] += rhoEff[j]*val[t*nbTurbine + j]
+        aPower[t] += rhoEff[j]*val[j*T + t]
     obj = opt_model.objective_value
-    #print("aPower = ", aPower)
-    #print("xi = ", xi)
+    
+    print("xi = ", xi)
     return [obj, aPower, xi_test]
 
 
@@ -539,7 +540,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
     nbVars1 = len(stab_center[0])
     nbVars2 = len(stab_center[1])
     
-  if z is not None and xi_test is not None: # We have lambda1 on which we optimize and lambda2 that doesn't change
+  if z is not None and xi_test is None: # We have lambda1 on which we optimize and lambda2 that doesn't change
     nbVars = len(stab_center[0])
     nbVars2 = len(stab_center[1])
     
@@ -591,7 +592,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
   
   # Set objective
   if z is not None and xi_test is None:
-    objective = opt_model.sum(1/2*(lamb_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[1][j])**2  for j in range(nbVars2))
+    objective = opt_model.sum(1/2*(lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[1][j])**2  for j in range(nbVars2))
     
   elif z is not None and xi_test is not None:
     objective = opt_model.sum(1/2*(lamb_vars[i] - stab_center[0][i])**2 for i in range(nbVars))
@@ -615,7 +616,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
       lamb2 = np.array([opt_model.solution[lamb2_vars[i]] for i in range(nbVars2)])
       lamb = [lamb1, lamb2]
       print("lambda2 = ", lamb2)
-    if z is not None and xi_test is not None:
+    elif z is not None and xi_test is not None:
       lamb1 = np.array([opt_model.solution[lamb_vars[i]] for i in range(nbVars)])
       lamb2 = stab_center[1]
       lamb = [lamb1, lamb2]
@@ -685,7 +686,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
 
   # Data
   gamma = 0.2
-  tol = 500
+  tol = 100
   theta_low = -10000000
   theta_lev = 1000000
 
@@ -738,7 +739,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     
     best_index = delta_pair[0]
     theta_lev = theta_low + gamma*delta
-    
+    print("best index = ", best_index)
     next_it_pair = find_next_lambda(iterates[best_index], theta_lev, function_bundle, subgradient_bundle, iterates, T, z, xi_test, saved_iterations_bundle)
        
     next_it = next_it_pair[1]
@@ -870,7 +871,8 @@ z_0 = np.array([1,0])
 
 
 lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514,58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556,34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
-lamb2_0 = np.zeros(len(z_0))
+lamb1_0 = np.zeros(T)
+lamb2_0 = np.ones(len(z_0))
 lamb_0 = [lamb1_0, lamb2_0]
 
 #top = [6525,6525,0,0,289.5,0,1848,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,4170,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,1080,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,0,0,0]
@@ -884,7 +886,7 @@ lamb_0 = [lamb1_0, lamb2_0]
 
 #print(oracleHydro(A_connect[0], lamb_0, T, dt, V0[0], Vmin[0], Vmax[0], nRes[0], nbTurbine[0], mxFlow[0], mxPow[0], sigT[0], wvals[0], nominf[0], 0, z_0, [1,0]))
 
-print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0, [1,1]))
+print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
 
 #print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False))
