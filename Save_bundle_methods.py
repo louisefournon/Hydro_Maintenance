@@ -540,7 +540,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
     nbVars1 = len(stab_center[0])
     nbVars2 = len(stab_center[1])
     
-  if z is not None and xi_test is None: # We have lambda1 on which we optimize and lambda2 that doesn't change
+  if z is not None and xi_test is not None: # We have lambda1 on which we optimize and lambda2 that doesn't change
     nbVars = len(stab_center[0])
     nbVars2 = len(stab_center[1])
     
@@ -623,8 +623,8 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
     else:
       lamb = np.array([opt_model.solution[lamb_vars[i]] for i in range(nbVars)])
     obj = opt_model.objective_value
-    print("obj next lambda = ", obj)
-    print("next lambda = ", lamb1)
+    #print("obj next lambda = ", obj)
+    #print("next lambda = ", lamb1)
     return [isEmptyL, lamb]
     
     
@@ -686,9 +686,9 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
 
   # Data
   gamma = 0.2
-  tol = 100
-  theta_low = -10000000
-  theta_lev = 1000000
+  tol = 500
+  theta_low = -100000000
+  theta_lev = -100
 
   # initialization 
   k = 0
@@ -724,13 +724,13 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   delta = tol + 1
   best_index = 0
 
-  while (delta > tol and k < 100):
+  while (delta > tol and k < 250):
 
     print("k = ", k)
     #print("theta_low = ", theta_low)
     
     # print("Function bundle = ", function_bundle) 
-    #print("Number of iterates = ", len(iterates))
+    print("Number of iterates = ", len(iterates))
     
     delta_pair = compute_delta(function_bundle, theta_low)
     delta = delta_pair[1]
@@ -771,12 +771,13 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     print("obj = ", obj)
     #print("theta_lev = ", theta_lev)
   
-  print()
-  
   # Add all collected data to our saved_iterations_bundle
   if saved_iterations_bundle is not None:
     saved_iteration = [ z, saved_lambdas_bundle, saved_function_bundle, saved_sg1_bundle, saved_sg2_bundle ]
     saved_iterations_bundle.append(saved_iteration)
+  
+  #print("Function bundle  = ", function_bundle)
+  #print("Iterates bundle  = ", iterates)
 
   return [obj, iterates[best_index]]
   
@@ -840,6 +841,8 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
     k = k+1
     obj = delta + W_low
     # print("W_lev = ", W_lev)
+    
+  
 
   return [obj, iterates[best_index]]
   
@@ -866,13 +869,13 @@ nominf = [nominf_1, nominf_2]
 MaintValleys = [0] # Here only on the first one
 
 # lamb_0 = 40*np.ones(T)
-z_0 = np.array([1,0])
+z_0 = np.array([0,0])
 #lamb1_0 = np.zeros(T)
 
 
-lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514,58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556,34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
+#lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514,58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556,34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
 lamb1_0 = np.zeros(T)
-lamb2_0 = np.ones(len(z_0))
+lamb2_0 = np.zeros(len(z_0))
 lamb_0 = [lamb1_0, lamb2_0]
 
 #top = [6525,6525,0,0,289.5,0,1848,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,4170,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,1080,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,0,0,0]
