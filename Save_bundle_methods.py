@@ -465,10 +465,13 @@ def oracleHydro(A_connect, lamb, T, dt, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow,
     obj = opt_model.objective_value
     
     print("xi = ", xi)
-    return [obj, aPower, xi_test]
+    return [obj, aPower, xi]
 
 
 # Lambda1 in argument has dimension T*(nbPbThermal + nbPbHydro)
+
+
+# In lagrangian, we define theta_z (and NOT -theta_z) the inversion is done in the bundle (-theta_z and -subgradient)
 
 def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, Vmin = None, Vmax = None, nRes = None, nbTurbine = None, mxFlow = None, mxPow = None, sigT = None, wvals = None, nominf = None, therm_grad = None, therm_cost = None, pow_max = None, initP = None, z = None, xi_test = None):
   
@@ -504,7 +507,7 @@ def lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb, A_connect = None, V0 = None, V
   else:
     theta += np.dot(dt*demand, lamb)
   sg1 += demand*dt
-  
+  print("current theta = ", theta)
   if z is not None:
     #print("sg2 = ", sg2)
     return [theta, sg1, sg2]
@@ -554,26 +557,24 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
   # Add decision variables
   if z is not None and xi_test is None:
     lamb1_vars = np.array([ opt_model.continuous_var() for t in range(nbVars1) ])
-    lamb2_vars = np.array([ opt_model.continuous_var(lb = -10000000000000) for j in range(nbVars2) ])
+    lamb2_vars = np.array([ opt_model.continuous_var(lb = np.NINF) for j in range(nbVars2) ])
 
   else:
     lamb_vars = np.array([ opt_model.continuous_var() for t in range(nbVars) ])
   
   # Set current cp constraints
   if z is not None and xi_test is not None:
+    
     cp_constraints = { j : opt_model.add_constraint( 
       ct = function_bundle[j] + np.dot(lamb_vars - iterates[j][0], subgradient_bundle[j][0]) <= theta_lev) for j in range(len(iterates))}
   
   elif z is not None and xi_test is None:
-    cp_constraints = { j : opt_model.add_constraint( 
+    
+    cp_constraints = { j : opt_model.add_constraint(
       ct = function_bundle[j] + np.dot(lamb1_vars - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2_vars - iterates[j][1], subgradient_bundle[j][1]) <= theta_lev) for j in range(len(iterates))}
       
   else:
-    # print("z = ", z)
-    # print("xi_test = ", xi_test)
-    # print("len lamb_vars = ", len(lamb_vars))
-    # print("len iterates[0][0] = ", len(iterates[0][0]))
-    # print("len subgradient_bundle[j][0] = ", len(subgradient_bundle[0][0]))
+
     cp_constraints = { j : opt_model.add_constraint( 
       ct = function_bundle[j] + np.dot(lamb_vars - iterates[j], subgradient_bundle[j]) <= theta_lev) for j in range(len(iterates))}
     
@@ -592,7 +593,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
   
   # Set objective
   if z is not None and xi_test is None:
-    objective = opt_model.sum(1/2*(lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[1][j])**2  for j in range(nbVars2))
+    objective = opt_model.sum(1/2*(lamb1_vars[i] - stab_center[0][i])**2 for i in range(nbVars1)) + opt_model.sum(1/2*(lamb2_vars[j] - stab_center[1][j])**2 for j in range(nbVars2))
     
   elif z is not None and xi_test is not None:
     objective = opt_model.sum(1/2*(lamb_vars[i] - stab_center[0][i])**2 for i in range(nbVars))
@@ -615,6 +616,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
       lamb1 = np.array([opt_model.solution[lamb1_vars[i]] for i in range(nbVars1)])
       lamb2 = np.array([opt_model.solution[lamb2_vars[i]] for i in range(nbVars2)])
       lamb = [lamb1, lamb2]
+      print("lambda1 = ", lamb1)
       print("lambda2 = ", lamb2)
     elif z is not None and xi_test is not None:
       lamb1 = np.array([opt_model.solution[lamb_vars[i]] for i in range(nbVars)])
@@ -625,6 +627,15 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
     obj = opt_model.objective_value
     #print("obj next lambda = ", obj)
     #print("next lambda = ", lamb1)
+    #sprint("CP EVALUATION = ", function_bundle[0] + np.dot(lamb1 - iterates[0][0], subgradient_bundle[0][0]) + np.dot(lamb2 - iterates[0][1], subgradient_bundle[0][1]))
+    print("OBJECTIF lambda = ", obj)
+    for j in range(len(iterates)):
+      #print("Constraint left term = ", np.dot(lamb1 - iterates[j][0], subgradient_bundle[j][0]) + np.dot(lamb2 - iterates[j][1], subgradient_bundle[j][1]))
+      print("lamb1 - iterates[j][0] = ", lamb1 - iterates[j][0] )
+      print("subgradient_bundle[j][0] = ", subgradient_bundle[j][0])
+      print("Theta lev = ", theta_lev)
+    
+    
     return [isEmptyL, lamb]
     
     
@@ -687,7 +698,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   # Data
   gamma = 0.2
   tol = 500
-  theta_low = -100000000
+  theta_low = -100000000000
   theta_lev = -100
 
   # initialization 
@@ -724,7 +735,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   delta = tol + 1
   best_index = 0
 
-  while (delta > tol and k < 250):
+  while (delta > tol and k < 10):
 
     print("k = ", k)
     #print("theta_low = ", theta_low)
@@ -740,7 +751,8 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     best_index = delta_pair[0]
     theta_lev = theta_low + gamma*delta
     print("best index = ", best_index)
-    next_it_pair = find_next_lambda(iterates[best_index], theta_lev, function_bundle, subgradient_bundle, iterates, T, z, xi_test, saved_iterations_bundle)
+    #print("sg2 best index = ", subgradient_bundle[best_index][1])
+    next_it_pair = find_next_lambda(iterates[-1], theta_lev, function_bundle, subgradient_bundle, iterates, T, z, xi_test, saved_iterations_bundle)
        
     next_it = next_it_pair[1]
     isEmptyL = next_it_pair[0]
@@ -776,7 +788,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
     saved_iteration = [ z, saved_lambdas_bundle, saved_function_bundle, saved_sg1_bundle, saved_sg2_bundle ]
     saved_iterations_bundle.append(saved_iteration)
   
-  #print("Function bundle  = ", function_bundle)
+  print("Function bundle  = ", function_bundle)
   #print("Iterates bundle  = ", iterates)
 
   return [obj, iterates[best_index]]
@@ -869,18 +881,15 @@ nominf = [nominf_1, nominf_2]
 MaintValleys = [0] # Here only on the first one
 
 # lamb_0 = 40*np.ones(T)
-z_0 = np.array([0,0])
+z_0 = np.array([0,1])
 #lamb1_0 = np.zeros(T)
 
 
-#lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514,58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556,34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
+lamb1_0 = np.array([29.99175809, 30.02809364, 43.97303945, 36.99451812, 45.99256514,58.9687617 , 46.03385174, 47.06288056, 35.9554747 , 30.01260556,34.94836093, 21.56113425, 33.4998073 , 29.99090791, 37.33781095, 47.17917975, 45.50809716, 54.39832005, 45.65966851, 46.95971906, 38.06938898, 30.00898517, 32.97738482, 27.02073265])
 lamb1_0 = np.zeros(T)
 lamb2_0 = np.zeros(len(z_0))
 lamb_0 = [lamb1_0, lamb2_0]
 
-#top = [6525,6525,0,0,289.5,0,1848,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,4170,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,1080,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,6525,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,6525,0,0,1800,0,2160,0,2700,0,7200,7200,7200,1080,1080,0,6525,0,0,0]
-
-#print(len(top))
 
 #print(lagrangian(nbPbTherm, nbPbHydro, T, dt, lamb_0, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
