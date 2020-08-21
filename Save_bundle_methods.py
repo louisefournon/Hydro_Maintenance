@@ -644,17 +644,17 @@ def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterate
   
   # Add decision variables
   z_vars = np.array([opt_model.binary_var() for t in range(nbVars) ])
-  print("z_vars = ", z_vars)
+  #print("z_vars = ", z_vars)
   # Set cp constraints
-  print(np.dot(z_vars - iterates[0], subgradient_bundle[0]))
+  #print(np.dot(z_vars - iterates[0], subgradient_bundle[0]))
   cp_constraints = { j : opt_model.add_constraint( 
     ct = function_bundle[j] + np.dot(z_vars - iterates[j], subgradient_bundle[j]) <= W_lev) for j in range(len(iterates))}
-  print("After cp constraint")    
+  #print("After cp constraint")    
   nTurbMaint = int(len(stab_center)/nMaintPeriods) # number of turbines over which we operate maintenance
   
   # Set minimum maintenance constraint
   minMaint_constraints = { i : opt_model.add_constraint(
-    ct = opt_model.sum(z_vars[ i*nMaintPeriods + t ] for t in range(nMaintPeriods)) <= nMaintPeriods - 2) for i in range(nTurbMaint) }
+    ct = opt_model.sum(z_vars[ i*nMaintPeriods + t ] for t in range(nMaintPeriods)) <= nMaintPeriods - 1) for i in range(nTurbMaint) }
   
   # Set objective
   objective = opt_model.sum((1/2 - stab_center[i])*z_vars[i] for i in range(nbVars))
@@ -663,7 +663,7 @@ def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterate
   
   #Solve
   opt_model.solve()
-  #print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
+  print("opt_model.get_solve_status() = ", opt_model.get_solve_status())
   
   #We check wether or not the SP could be solved
   if(opt_model.get_solve_status() != JobSolveStatus.OPTIMAL_SOLUTION):
@@ -673,11 +673,8 @@ def find_next_z(stab_center, W_lev, function_bundle, subgradient_bundle, iterate
     isEmptyL = False
     z = np.array([opt_model.solution[z_vars[i]] for i in range(nbVars)])
     obj = opt_model.objective_value
+    print("NEW Z VARIABLE = ", z)
     return [isEmptyL, z]
-
-def cutting_planes_model(function_bundle, subgradient_bundle, iterates, z): 
-  hat_W = map(lambda w, xi, zk: w + np.dot(xi,(z-zk)), function_bundle, subgradient_bundle, iterates)
-  return max(hat_W)
 
 
 ### II. Algorithm"""
@@ -843,7 +840,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
 
       function_bundle.append(oracle[0])
       #print("Function evaluation = ", oracle[0]) 
-      subgradient_bundle.append(oracle[1])
+      subgradient_bundle.append(oracle[1][1])
     k = k+1
     obj = delta + W_low
     # print("W_lev = ", W_lev)
