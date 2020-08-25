@@ -9,6 +9,7 @@ import docplex.util.environment as environment
 from docplex.util.status import JobSolveStatus
 import docplex.mp.model as cpx
 import sys 
+import time 
 
 ##############################
 #      Define the oracles    #
@@ -590,7 +591,7 @@ def find_next_lambda(stab_center, theta_lev, function_bundle, subgradient_bundle
       saved_sg2_bundle = saved_iterations_bundle[i][4]
       # Add cp constaints for every iteration associated to that z'
       cp_bundle_constraints = { j : opt_model.add_constraint(
-        ct = saved_function_bundle[j] + np.dot(saved_lambas_bundle[j][1], z - z_prime) + np.dot(saved_sg1_bundle[j], lamb1_vars - saved_lambas_bundle[j][0]) + np.dot(saved_sg2_bundle[j], lamb2_vars - saved_lambas_bundle[j][1]) <= theta_lev) for j in range(len(lambas_bundle)) }
+        ct = saved_function_bundle[j] + np.dot(saved_lambas_bundle[j][1], z - z_prime) + np.dot(saved_sg1_bundle[j], lamb1_vars - saved_lambas_bundle[j][0]) + np.dot(saved_sg2_bundle[j], lamb2_vars - saved_lambas_bundle[j][1]) <= theta_lev) for j in range(len(saved_lambas_bundle)) }
   
   # Set objective
   if z is not None and xi_test is None:
@@ -788,6 +789,7 @@ def bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin
   
 def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, usePreviousIterates):
   
+  start = time.time()
   # Set up parameters
   gamma = 0.2
   tol = 0.0001
@@ -799,6 +801,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
   nbVars = len(z_0)
   iterates = [z_0]
   if(usePreviousIterates):
+    print("Create bundle previous iterates")
     saved_iterations_bundle = []
   else:
     saved_iterations_bundle = None
@@ -808,7 +811,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
   lamb2_0 = np.zeros(len(z_0))
   lamb_0 = [lamb1_0, lamb2_0]
   
-  oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0, saved_iterations_bundle)
+  oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0, None, saved_iterations_bundle)
   
   function_bundle = [oracle[0]] # sup_\lambda \theta = W(z)
   subgradient_bundle = [oracle[1][1]] # \lambda_2
@@ -836,7 +839,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
     else :
       iterates.append(next_it)
 
-      oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, iterates[-1], saved_iterations_bundle)
+      oracle = bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, iterates[-1], None, saved_iterations_bundle)
 
       function_bundle.append(oracle[0])
       #print("Function evaluation = ", oracle[0]) 
@@ -844,9 +847,9 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
     k = k+1
     obj = delta + W_low
     # print("W_lev = ", W_lev)
-    
   
-
+  end = time.time()
+  print("Execution time = ", end - start)
   return [obj, iterates[best_index]]
   
 
