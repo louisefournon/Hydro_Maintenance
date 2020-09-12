@@ -792,7 +792,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
   start = time.time()
   # Set up parameters
   gamma = 0.2
-  tol = 0.0001
+  tol = 0.1
   W_low = 0
   W_lev = 100000000
   
@@ -850,7 +850,7 @@ def bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax,
   
   end = time.time()
   print("Execution time = ", end - start)
-  return [obj, iterates[best_index]]
+  return [obj, iterates[best_index], end - start]
   
 
 #################### Tests #################################
@@ -895,6 +895,27 @@ lamb_0 = [lamb1_0, lamb2_0]
 #print(bundle_method_theta(dt, T, lamb_0, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, z_0))
 
 
-print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False))
+#print(bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, True))
 
-
+def exec_time(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, nbTests):
+  exTimes1 = []
+  exTimes2 = []
+  for i in range(nbTests):
+    execTime1 = bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, False)[2]
+    exTimes1.append(execTime1)
+    print("execTime1 = ", execTime1)
+    execTime2 = bundle_method_W(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, True)[2]
+    print("execTime2 = ", execTime2)
+    exTimes2.append(execTime2)
+  print("Exec time simple = ", exTimes1)  
+  print("Exec time improved = ", exTimes2) 
+  meanMax = np.mean(exTimes1)
+  meanMin = np.min(exTimes2)
+  print("meanMax = ", meanMax)
+  print("meanMin = ", meanMin)
+  
+  
+exec_time(z_0, dt, T, nbPbTherm, nbPbHydro, A_connect, V0, Vmin, Vmax, nRes, nbTurbine, mxFlow, mxPow, sigT, wvals, nominf, therm_grad, therm_cost, pow_max, initP, 5)
+    
+    
+  
